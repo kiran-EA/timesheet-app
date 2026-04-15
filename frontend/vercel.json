@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/auth/:path*",      "destination": "https://your-backend.railway.app/auth/:path*" },
+    { "source": "/jira/:path*",      "destination": "https://your-backend.railway.app/jira/:path*" },
+    { "source": "/timesheet/:path*", "destination": "https://your-backend.railway.app/timesheet/:path*" },
+    { "source": "/calendar/:path*",  "destination": "https://your-backend.railway.app/calendar/:path*" },
+    { "source": "/health",           "destination": "https://your-backend.railway.app/health" }
+  ]
+}
