@@ -4,6 +4,11 @@
     {
       "src": "frontend/package.json",
       "use": "@vercel/next"
+    },
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": { "maxLambdaSize": "50mb" }
     }
   ],
   "routes": [
@@ -11,7 +16,6 @@
     { "src": "/jira(.*)",      "dest": "api/index.py" },
     { "src": "/timesheet(.*)", "dest": "api/index.py" },
     { "src": "/calendar(.*)",  "dest": "api/index.py" },
-    { "src": "/health",        "dest": "api/index.py" },
-    { "src": "/(.*)",          "dest": "frontend" }
+    { "src": "/health",        "dest": "api/index.py" }
   ]
 }
