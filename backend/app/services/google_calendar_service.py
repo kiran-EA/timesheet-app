@@ -1,167 +1,228 @@
+"""
+Google Calendar Service
+-----------------------
+Two modes:
+  1. Service Account (domain-wide delegation) — no user OAuth needed.
+     Requires service-account.json + Workspace admin grants delegation.
+  2. OAuth fallback — user connects manually via /calendar/auth-url.
+"""
+
+import os
 import logging
-from typing import Optional, Dict, Any, List
-from google.oauth2.credentials import Credentials
+from datetime import datetime, timezone
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
 from app.core.config import settings
+from app.db.database import execute_query
 
 logger = logging.getLogger(__name__)
 
-class GoogleCalendarService:
-    def __init__(self):
-        self.scopes = ['https://www.googleapis.com/auth/calendar']
-        self.service = None
-        logger.info("📅 GoogleCalendarService initialized")
-    
-    def create_auth_flow(self) -> Flow:
-        """Create OAuth flow for user authorization"""
-        try:
-            logger.info("🔐 Creating Google OAuth flow")
-            
-            client_config = {
-                "installed": {
-                    "client_id": settings.GOOGLE_CLIENT_ID,
-                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [settings.GOOGLE_REDIRECT_URI]
-                }
-            }
-            
-            flow = Flow.from_client_config(
-                client_config,
-                scopes=self.scopes,
-                redirect_uri=settings.GOOGLE_REDIRECT_URI
-            )
-            
-            logger.info("✅ OAuth flow created")
-            return flow
-        except Exception as e:
-            logger.error(f"❌ Error creating OAuth flow: {e}", exc_info=True)
-            raise
-    
-    def get_auth_url(self) -> str:
-        """Get the authorization URL for user to authenticate"""
-        try:
-            flow = self.create_auth_flow()
-            auth_url, _ = flow.authorization_url(prompt='consent')
-            logger.info(f"✅ Auth URL generated: {auth_url[:50]}...")
-            return auth_url
-        except Exception as e:
-            logger.error(f"❌ Error generating auth URL: {e}", exc_info=True)
-            return ""
-    
-    def exchange_code_for_token(self, code: str) -> Optional[Dict[str, Any]]:
-        """Exchange authorization code for access token"""
-        try:
-            logger.info("🔄 Exchanging authorization code for token")
-            
-            flow = self.create_auth_flow()
-            flow.fetch_token(code=code)
-            
-            credentials = flow.credentials
-            token_data = {
-                'access_token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'expires_at': credentials.expiry.timestamp() if credentials.expiry else None
-            }
-            
-            logger.info("✅ Token exchange successful")
-            return token_data
-        except Exception as e:
-            logger.error(f"❌ Error exchanging code for token: {e}", exc_info=True)
-            return None
-    
-    def build_service(self, access_token: str):
-        """Build Google Calendar service with access token"""
-        try:
-            credentials = Credentials(token=access_token)
-            self.service = build('calendar', 'v3', credentials=credentials)
-            logger.info("✅ Google Calendar service built")
-            return self.service
-        except Exception as e:
-            logger.error(f"❌ Error building service: {e}", exc_info=True)
-            return None
-    
-    def get_events(self, access_token: str, days: int = 7) -> List[Dict[str, Any]]:
-        """Fetch events from user's primary calendar"""
-        try:
-            logger.info(f"📅 Fetching events for next {days} days")
-            
-            service = self.build_service(access_token)
-            if not service:
-                return []
-            
-            now = datetime.utcnow().isoformat() + 'Z'
-            end_time = (datetime.utcnow() + timedelta(days=days)).isoformat() + 'Z'
-            
-            events_result = service.events().list(
-                calendarId='primary',
-                timeMin=now,
-                timeMax=end_time,
-                maxResults=100,
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
-            
-            events = events_result.get('items', [])
-            logger.info(f"✅ Found {len(events)} events")
-            
-            formatted_events = []
-            for event in events:
-                start = event.get('start', {})
-                end = event.get('end', {})
-                
-                formatted_events.append({
-                    'id': event.get('id', ''),
-                    'summary': event.get('summary', ''),
-                    'description': event.get('description', ''),
-                    'start': start.get('dateTime', start.get('date', '')),
-                    'end': end.get('dateTime', end.get('date', '')),
-                    'location': event.get('location', ''),
-                    'organizer': event.get('organizer', {}).get('email', ''),
-                    'attendees': [
-                        {
-                            'email': attendee.get('email', ''),
-                            'displayName': attendee.get('displayName', ''),
-                            'responseStatus': attendee.get('responseStatus', '')
-                        }
-                        for attendee in event.get('attendees', [])
-                    ]
-                })
-            
-            return formatted_events
-        except Exception as e:
-            logger.error(f"❌ Error fetching events: {e}", exc_info=True)
-            return []
-    
-    def create_event(self, access_token: str, event_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Create a new calendar event"""
-        try:
-            logger.info(f"📝 Creating event: {event_data.get('summary', '')}")
-            
-            service = self.build_service(access_token)
-            if not service:
-                return None
-            
-            event = service.events().insert(
-                calendarId='primary',
-                body=event_data
-            ).execute()
-            
-            logger.info(f"✅ Event created: {event['id']}")
-            
-            return {
-                'id': event.get('id', ''),
-                'summary': event.get('summary', ''),
-                'start': event.get('start', {}),
-                'end': event.get('end', {}),
-                'htmlLink': event.get('htmlLink', '')
-            }
-        except Exception as e:
-            logger.error(f"❌ Error creating event: {e}", exc_info=True)
-            return None
+SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-google_calendar_service = GoogleCalendarService()
+CLIENT_CONFIG = {
+    "web": {
+        "client_id":     settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "redirect_uris": [settings.GOOGLE_REDIRECT_URI],
+        "auth_uri":      "https://accounts.google.com/o/oauth2/auth",
+        "token_uri":     "https://oauth2.googleapis.com/token",
+    }
+}
+
+# ── Service Account (domain-wide delegation) ──────────────────────────────────
+
+def _service_account_path() -> str:
+    base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return os.path.join(base, settings.GOOGLE_SERVICE_ACCOUNT_FILE)
+
+
+def is_service_account_available() -> bool:
+    return os.path.exists(_service_account_path())
+
+
+def get_service_account_credentials(user_email: str):
+    """Return credentials impersonating user_email via domain-wide delegation."""
+    creds = service_account.Credentials.from_service_account_file(
+        _service_account_path(),
+        scopes=SCOPES,
+    ).with_subject(user_email)
+    return creds
+
+
+# ── OAuth flow (fallback) ─────────────────────────────────────────────────────
+
+def get_auth_url(state: str) -> str:
+    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, state=state)
+    flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    return auth_url
+
+
+def exchange_code(code: str) -> dict:
+    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
+    flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    return {
+        "access_token":  creds.token,
+        "refresh_token": creds.refresh_token,
+        "token_expiry":  creds.expiry.isoformat() if creds.expiry else None,
+    }
+
+
+def save_tokens(user_id: str, tokens: dict):
+    execute_query("DELETE FROM google_tokens WHERE user_id = %s",
+                  (user_id,), fetch_all=False)
+    execute_query(
+        """INSERT INTO google_tokens (user_id, access_token, refresh_token, token_expiry, updated_at)
+           VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)""",
+        (user_id, tokens["access_token"], tokens.get("refresh_token"), tokens.get("token_expiry")),
+        fetch_all=False,
+    )
+
+
+def load_tokens(user_id: str) -> dict | None:
+    row = execute_query(
+        "SELECT access_token, refresh_token, token_expiry FROM google_tokens WHERE user_id = %s",
+        (user_id,), fetch_one=True,
+    )
+    return dict(row) if row else None
+
+
+def get_oauth_credentials(user_id: str) -> Credentials | None:
+    tokens = load_tokens(user_id)
+    if not tokens:
+        return None
+    expiry = None
+    if tokens.get("token_expiry"):
+        try:
+            expiry = datetime.fromisoformat(str(tokens["token_expiry"]))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+    creds = Credentials(
+        token=tokens["access_token"],
+        refresh_token=tokens.get("refresh_token"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        scopes=SCOPES,
+        expiry=expiry,
+    )
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            save_tokens(user_id, {
+                "access_token":  creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_expiry":  creds.expiry.isoformat() if creds.expiry else None,
+            })
+        except Exception as e:
+            logger.error(f"Token refresh failed for {user_id}: {e}")
+            return None
+    return creds
+
+
+# ── Unified status & events ───────────────────────────────────────────────────
+
+def is_connected(user_id: str, user_email: str) -> bool:
+    """True if calendar can be accessed (service account OR stored OAuth token)."""
+    if is_service_account_available():
+        return True
+    return load_tokens(user_id) is not None
+
+
+def get_events(user_id: str, user_email: str, time_min: str, time_max: str) -> list:
+    """
+    Fetch calendar events.
+    Prefers service account (no user action needed).
+    Falls back to stored OAuth token.
+    """
+    if is_service_account_available():
+        try:
+            creds = get_service_account_credentials(user_email)
+            service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+            logger.info(f"Using service account for {user_email}")
+            return _fetch_events(service, time_min, time_max)
+        except Exception as e:
+            logger.warning(f"Service account failed for {user_email}: {e} — trying OAuth")
+
+    creds = get_oauth_credentials(user_id)
+    if not creds:
+        return []
+    try:
+        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+        return _fetch_events(service, time_min, time_max)
+    except Exception as e:
+        logger.error(f"get_events OAuth error for {user_id}: {e}")
+        return []
+
+
+def _is_accepted(event: dict) -> bool:
+    """
+    Return True if the calendar user has accepted this event (or is the organizer).
+
+    Rules:
+      - No attendees list → personal/self-created event → include
+      - User is organizer (organizer.self == True) → include
+      - User's attendee entry has responseStatus == 'accepted' → include
+      - responseStatus == 'tentative' → include (tentative acceptance)
+      - responseStatus == 'declined' or 'needsAction' → exclude
+    """
+    attendees = event.get("attendees", [])
+
+    # Personal event (no invitees) or created by this user alone
+    if not attendees:
+        return True
+
+    # User is the organizer
+    organizer = event.get("organizer", {})
+    if organizer.get("self"):
+        return True
+
+    # Check the user's own attendee entry (marked with self=True)
+    for attendee in attendees:
+        if attendee.get("self"):
+            status = attendee.get("responseStatus", "needsAction")
+            return status in ("accepted", "tentative")
+
+    # No self entry found — likely a calendar-wide event, include it
+    return True
+
+
+def _fetch_events(service, time_min: str, time_max: str) -> list:
+    result = service.events().list(
+        calendarId="primary",
+        timeMin=time_min,
+        timeMax=time_max,
+        singleEvents=True,
+        orderBy="startTime",
+        maxResults=200,
+    ).execute()
+
+    events = []
+    for e in result.get("items", []):
+        # Only include events the user has accepted (or is organizer of)
+        if not _is_accepted(e):
+            continue
+
+        start = e.get("start", {})
+        end   = e.get("end",   {})
+        events.append({
+            "id":       e.get("id"),
+            "title":    e.get("summary", "(No title)"),
+            "start":    start.get("dateTime") or start.get("date"),
+            "end":      end.get("dateTime")   or end.get("date"),
+            "all_day":  "date" in start and "dateTime" not in start,
+            "location": e.get("location", ""),
+            "status":   e.get("status", ""),
+        })
+    return events

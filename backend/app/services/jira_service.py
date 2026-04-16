@@ -1,154 +1,169 @@
 import requests
-import logging
 from requests.auth import HTTPBasicAuth
 from typing import Optional, Dict, Any
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
-
 class JiraService:
     def __init__(self):
         self.base_url = f"https://{settings.JIRA_DOMAIN}/rest/api/3"
-        self.auth = HTTPBasicAuth(settings.JIRA_EMAIL, settings.JIRA_TOKEN)
-        self.headers = {"Accept": "application/json"}
-        logger.info(f"🔗 JiraService initialized with domain: {settings.JIRA_DOMAIN}")
-    
-    def verify_user(self, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            logger.info(f"🔍 Verifying Jira user: {email}")
-            
-            response = requests.get(
-                f"{self.base_url}/myself",
-                auth=self.auth,
-                headers=self.headers,
-                timeout=10
-            )
-            response.raise_for_status()
-            user_data = response.json()
-            logger.info(f"✅ Got '/myself' data from Jira: {user_data.get('displayName')}")
-            
-            if user_data.get('emailAddress', '').lower() == email.lower():
-                logger.info(f"✅ User matched from '/myself' endpoint: {email}")
-                return {
-                    'account_id': user_data['accountId'],
-                    'email': user_data['emailAddress'],
-                    'display_name': user_data['displayName']
-                }
-            
-            logger.info(f"🔎 Searching Jira for user matching: {email}")
-            search_response = requests.get(
-                f"{self.base_url}/user/search",
-                auth=self.auth,
-                headers=self.headers,
-                params={'query': email},
-                timeout=10
-            )
-            search_response.raise_for_status()
-            users = search_response.json()
-            logger.info(f"📋 Found {len(users)} users in Jira search")
-            
-            for user in users:
-                if user.get('emailAddress', '').lower() == email.lower():
-                    logger.info(f"✅ User matched from search: {email}")
-                    return {
-                        'account_id': user['accountId'],
-                        'email': user['emailAddress'],
-                        'display_name': user['displayName']
-                    }
-            logger.warning(f"❌ No Jira user found with email: {email}")
-            return None
-        except Exception as e:
-            logger.error(f"❌ Jira verification error: {e}", exc_info=True)
-            return None
-    
-    def get_user_issues(self, account_id: str) -> list:
-        """Fetch all issues assigned to a user"""
-        try:
-            logger.info(f"📌 Fetching issues for account_id: {account_id}")
+        self.auth     = HTTPBasicAuth(settings.JIRA_EMAIL, settings.JIRA_TOKEN)
+        self.headers  = {"Accept": "application/json"}
 
-            # JQL query to get issues assigned to the user
-            jql = f"assignee = '{account_id}' AND status != Done ORDER BY updated DESC"
-
-            # /search was removed (HTTP 410); use the new /search/jql POST endpoint
-            response = requests.post(
+    def get_active_sprint_keys(self, email: str) -> set:
+        """
+        Return set of issue keys that are currently in an active sprint for this user.
+        Uses 'sprint in openSprints()' JQL — the only reliable way since tasks
+        can be carried over from older sprints (their sprint field shows old sprint name).
+        """
+        try:
+            jql = f'assignee = "{email}" AND sprint in openSprints() AND statusCategory != Done'
+            r = requests.post(
                 f"{self.base_url}/search/jql",
                 auth=self.auth,
                 headers={**self.headers, "Content-Type": "application/json"},
-                json={
-                    'jql': jql,
-                    'maxResults': 50,
-                    'fields': ['key', 'summary', 'description', 'status', 'priority', 'assignee', 'created', 'updated', 'duedate', 'timeestimate', 'timespent']
-                },
-                timeout=10
+                json={"jql": jql, "maxResults": 100, "fields": ["summary"]},
+                timeout=15,
             )
-            response.raise_for_status()
-            data = response.json()
-            issues = data.get('issues', [])
-            logger.info(f"✅ Found {len(issues)} issues assigned to user")
-            
-            formatted_issues = []
-            for issue in issues:
-                fields = issue.get('fields', {})
-                formatted_issues.append({
-                    'key': issue['key'],
-                    'id': issue['id'],
-                    'summary': fields.get('summary', ''),
-                    'description': fields.get('description', ''),
-                    'status': fields.get('status', {}).get('name', ''),
-                    'priority': fields.get('priority', {}).get('name', ''),
-                    'assignee': fields.get('assignee', {}).get('displayName', ''),
-                    'created': fields.get('created', ''),
-                    'updated': fields.get('updated', ''),
-                    'duedate': fields.get('duedate', ''),
-                    'timeestimate': fields.get('timeestimate', 0),
-                    'timespent': fields.get('timespent', 0)
-                })
-            
-            return formatted_issues
+            if r.ok:
+                return {i["key"] for i in r.json().get("issues", [])}
         except Exception as e:
-            logger.error(f"❌ Error fetching Jira issues: {e}", exc_info=True)
-            return []
+            print(f"get_active_sprint_keys error: {e}")
+        return set()
     
-    def get_issue_details(self, issue_key: str) -> Optional[Dict[str, Any]]:
-        """Fetch detailed information for a specific issue"""
-        try:
-            logger.info(f"📖 Fetching details for issue: {issue_key}")
-            
-            response = requests.get(
-                f"{self.base_url}/issue/{issue_key}",
-                auth=self.auth,
-                headers=self.headers,
-                timeout=10
-            )
-            response.raise_for_status()
-            issue = response.json()
-            logger.info(f"✅ Got details for issue: {issue_key}")
-            
-            fields = issue.get('fields', {})
+    def _domain_fallback(self, email: str) -> Optional[Dict[str, Any]]:
+        """Allow any @expressanalytics.net email when Jira API is unavailable."""
+        if email.lower().endswith('@expressanalytics.net'):
+            name_part = email.split('@')[0].replace('.', ' ').title()
+            account_id = 'local_' + email.split('@')[0].replace('.', '_')
+            print(f"Jira API unavailable — using domain fallback for {email}")
             return {
-                'key': issue['key'],
-                'id': issue['id'],
-                'summary': fields.get('summary', ''),
-                'description': fields.get('description', ''),
-                'status': fields.get('status', {}).get('name', ''),
-                'priority': fields.get('priority', {}).get('name', ''),
-                'assignee': fields.get('assignee', {}).get('displayName', ''),
-                'created': fields.get('created', ''),
-                'updated': fields.get('updated', ''),
-                'duedate': fields.get('duedate', ''),
-                'timeestimate': fields.get('timeestimate', 0),
-                'timespent': fields.get('timespent', 0),
-                'comments': [
-                    {
-                        'author': comment.get('author', {}).get('displayName', ''),
-                        'body': comment.get('body', ''),
-                        'created': comment.get('created', '')
-                    }
-                    for comment in fields.get('comment', {}).get('comments', [])
-                ]
+                'account_id': account_id,
+                'email': email,
+                'display_name': name_part,
             }
+        return None
+
+    def verify_user(self, email: str) -> Optional[Dict[str, Any]]:
+        try:
+            # 1. Check if this is the API credential user
+            response = requests.get(
+                f"{self.base_url}/myself", auth=self.auth, headers=self.headers, timeout=10
+            )
+            if response.ok:
+                user_data = response.json()
+                if user_data.get('emailAddress', '').lower() == email.lower():
+                    return {
+                        'account_id': user_data['accountId'],
+                        'email': user_data['emailAddress'],
+                        'display_name': user_data['displayName'],
+                    }
+
+                # 2. Search for the user in Jira
+                for query in [email, email.split('@')[0]]:
+                    search_resp = requests.get(
+                        f"{self.base_url}/user/search",
+                        auth=self.auth,
+                        headers=self.headers,
+                        params={'query': query},
+                        timeout=10,
+                    )
+                    if search_resp.ok:
+                        for user in search_resp.json():
+                            if user.get('emailAddress', '').lower() == email.lower():
+                                return {
+                                    'account_id': user['accountId'],
+                                    'email': user['emailAddress'],
+                                    'display_name': user['displayName'],
+                                }
+
+            # 3. Jira API failed or user not found — fall back to domain check
+            print(f"Jira lookup failed (status {response.status_code}) — using domain fallback")
+            return self._domain_fallback(email)
+
         except Exception as e:
-            logger.error(f"❌ Error fetching issue details: {e}", exc_info=True)
-            return None
+            print(f"Jira error: {e}")
+            return self._domain_fallback(email)
+
+    def check_connection(self) -> dict:
+        """Return Jira connection status."""
+        try:
+            r = requests.get(f"{self.base_url}/myself", auth=self.auth, headers=self.headers, timeout=8)
+            if r.ok:
+                data = r.json()
+                return {"connected": True, "user": data.get("emailAddress")}
+            return {"connected": False, "error": f"Authentication failed (HTTP {r.status_code}). Regenerate your Jira API token."}
+        except Exception as e:
+            return {"connected": False, "error": str(e)}
+
+    def get_user_tasks(self, email: str) -> list:
+        """Fetch open Jira issues assigned to the user via /search/jql (POST)."""
+        try:
+            # Use email in JQL — works even when account_id is a fallback value
+            jql = f'assignee = "{email}" AND statusCategory != Done ORDER BY updated DESC'
+            payload = {
+                "jql": jql,
+                "maxResults": 50,
+                "fields": [
+                    "summary", "status", "assignee",
+                    "customfield_10016",        # story points
+                    "customfield_10014",        # epic link
+                    "timeoriginalestimate",
+                    "timespent",
+                    "customfield_10020",        # sprint
+                ],
+            }
+            post_headers = {**self.headers, "Content-Type": "application/json"}
+            response = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers=post_headers,
+                json=payload,
+                timeout=15,
+            )
+            if not response.ok:
+                print(f"Jira /search/jql failed: {response.status_code} {response.text[:200]}")
+                return []
+
+            tasks = []
+            for issue in response.json().get("issues", []):
+                fields = issue.get("fields", {})
+                summary = fields.get("summary", "")
+
+                # Story points are encoded in the title as the trailing ": NUMBER"
+                # e.g. "Development: TBL_F_CUSTOMER_PROFILE Part 2 : 8"  -> sp = 8
+                sp = fields.get("customfield_10016") or fields.get("customfield_10028")
+                if sp is None:
+                    import re
+                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
+                    if m:
+                        sp = float(m.group(1))
+
+                # Est. hours = SP * 8  (1 story point = 1 day = 8 hours)
+                est_hours = round(sp * 8, 2) if sp is not None else None
+
+                sprint_name = None
+                sprints = fields.get("customfield_10020") or []
+                if isinstance(sprints, list) and sprints:
+                    sprint_name = sprints[-1].get("name")
+
+                epic = fields.get("customfield_10014")
+
+                tasks.append({
+                    "id":               issue["id"],
+                    "key":              issue["key"],
+                    "title":            summary,
+                    "epic":             epic,
+                    "story_points":     sp,
+                    "est_hours":        est_hours,
+                    "logged_hours":     0,
+                    "status":           fields.get("status", {}).get("name", "Unknown"),
+                    "sprint":           sprint_name,
+                    "is_active_sprint": False,  # filled in by the API
+                })
+            return tasks
+        except Exception as e:
+            print(f"Jira get_user_tasks error: {e}")
+            return []
+
 
 jira_service = JiraService()

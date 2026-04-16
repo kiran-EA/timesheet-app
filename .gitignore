@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+*.egg-info/
+
+# Service Account (never commit)
+service-account.json
+
+# Node
+node_modules/
+.next/
+.env.local
+.env*.local
+
+# OS
+.DS_Store
+Thumbs.db

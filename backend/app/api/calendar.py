@@ -1,162 +1,113 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-import logging
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from app.core.security import get_current_user
-from app.services.google_calendar_service import google_calendar_service
+from app.core.config import settings
+from app.services import google_calendar_service as gcal
+from app.db.database import execute_query
+import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/calendar", tags=["Google Calendar"])
 
-class EventData(BaseModel):
-    summary: str
-    description: str = ""
-    start: dict
-    end: dict
-    location: str = ""
-    attendees: list = []
 
-@router.get("/auth-url")
-async def get_auth_url():
-    """Get Google OAuth authentication URL"""
-    logger.info("🔐 Generating Google Calendar auth URL")
-    
-    try:
-        auth_url = google_calendar_service.get_auth_url()
-        if not auth_url:
-            logger.error("❌ Failed to generate auth URL")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to generate authentication URL"
-            )
-        
-        logger.info("✅ Auth URL generated")
-        return {
-            "success": True,
-            "auth_url": auth_url,
-            "message": "Visit this URL to authenticate with Google Calendar"
-        }
-    except Exception as e:
-        logger.error(f"❌ Error generating auth URL: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate auth URL: {str(e)}"
-        )
-
-@router.post("/callback")
-async def handle_callback(code: str = Query(...), current_user: dict = Depends(get_current_user)):
-    """Handle Google OAuth callback after user authentication"""
-    logger.info(f"🔄 Processing Google OAuth callback for user: {current_user['sub']}")
-    
-    try:
-        token_data = google_calendar_service.exchange_code_for_token(code)
-        if not token_data:
-            logger.error("❌ Failed to exchange code for token")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to authenticate with Google Calendar"
-            )
-        
-        logger.info("✅ Google authentication successful")
-        # In production, you would store this token in the database
-        
-        return {
-            "success": True,
-            "message": "Successfully authenticated with Google Calendar",
-            "token": token_data['access_token'][:20] + "..." # Don't expose full token
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"❌ Error in OAuth callback: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process authentication: {str(e)}"
-        )
-
-@router.get("/events")
-async def get_calendar_events(
-    access_token: str = Query(...),
-    days: int = Query(7, ge=1, le=90)
-):
-    """Get upcoming events from Google Calendar"""
-    logger.info(f"📅 Fetching calendar events for next {days} days")
-    
-    try:
-        events = google_calendar_service.get_events(access_token, days)
-        logger.info(f"✅ Retrieved {len(events)} events")
-        
-        return {
-            "success": True,
-            "count": len(events),
-            "events": events
-        }
-    except Exception as e:
-        logger.error(f"❌ Error fetching calendar events: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch calendar events: {str(e)}"
-        )
-
-@router.post("/events")
-async def create_calendar_event(event_data: EventData, access_token: str = Query(...)):
-    """Create a new event in Google Calendar"""
-    logger.info(f"📝 Creating calendar event: {event_data.summary}")
-    
-    try:
-        event_body = {
-            'summary': event_data.summary,
-            'description': event_data.description,
-            'start': event_data.start,
-            'end': event_data.end,
-            'location': event_data.location
-        }
-        
-        if event_data.attendees:
-            event_body['attendees'] = [
-                {'email': attendee} if isinstance(attendee, str) else attendee
-                for attendee in event_data.attendees
-            ]
-        
-        event = google_calendar_service.create_event(access_token, event_body)
-        if not event:
-            logger.error("❌ Failed to create event")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create calendar event"
-            )
-        
-        logger.info(f"✅ Event created: {event['id']}")
-        return {
-            "success": True,
-            "message": "Event created successfully",
-            "event": event
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"❌ Error creating event: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create event: {str(e)}"
-        )
+# ── Status ────────────────────────────────────────────────────────────────────
 
 @router.get("/status")
-async def calendar_connection_status(access_token: str = Query(...)):
-    """Check Google Calendar connection status"""
-    logger.info("🔍 Checking Google Calendar connection status")
-    
+async def calendar_status(current_user: dict = Depends(get_current_user)):
+    user_id    = current_user["sub"]
+    user_email = current_user.get("email", "")
+    connected  = gcal.is_connected(user_id, user_email)
+    mode       = "service_account" if gcal.is_service_account_available() else "oauth"
+    return {"connected": connected, "mode": mode}
+
+
+# ── Fetch events for a specific date ─────────────────────────────────────────
+
+@router.get("/events-by-date")
+async def get_events_by_date(
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Return Google Calendar events for the logged-in user on a given date.
+    Uses service account — no OAuth needed.
+    Also returns which event IDs have already been logged.
+    """
+    user_id    = current_user["sub"]
+    user_email = current_user.get("email", "")
+
+    if not gcal.is_connected(user_id, user_email):
+        raise HTTPException(
+            status_code=403,
+            detail="Google Calendar not accessible. Contact admin."
+        )
+
     try:
-        events = google_calendar_service.get_events(access_token, days=1)
-        logger.info("✅ Google Calendar connection is healthy")
-        
-        return {
-            "status": "connected",
-            "message": "Google Calendar connection is healthy",
-            "upcoming_events": len(events)
-        }
+        # Build time range for the day
+        day_start = datetime.fromisoformat(f"{date}T00:00:00").replace(tzinfo=timezone.utc)
+        day_end   = datetime.fromisoformat(f"{date}T23:59:59").replace(tzinfo=timezone.utc)
+
+        events = gcal.get_events(
+            user_id, user_email,
+            time_min=day_start.isoformat(),
+            time_max=day_end.isoformat(),
+        )
+
+        # Find which event IDs are already logged for this user + date
+        logged_rows = execute_query(
+            """SELECT calendar_event_id FROM timesheet_entries
+               WHERE user_id = %s AND calendar_event_id IS NOT NULL
+               AND entry_date = %s""",
+            (user_id, date), fetch_all=True
+        )
+        logged_ids = {r["calendar_event_id"] for r in (logged_rows or [])}
+
+        # Annotate events with already_logged flag and computed duration
+        result = []
+        for e in events:
+            if not e.get("start") or e.get("all_day"):
+                continue   # skip all-day events
+
+            start_dt = datetime.fromisoformat(e["start"].replace("Z", "+00:00"))
+            end_dt   = datetime.fromisoformat(e["end"].replace("Z", "+00:00"))
+            duration_hours = round((end_dt - start_dt).total_seconds() / 3600, 2)
+
+            result.append({
+                **e,
+                "duration_hours":  duration_hours,
+                "already_logged":  e["id"] in logged_ids,
+            })
+
+        return {"events": result, "count": len(result), "date": date}
+
+    except Exception as ex:
+        logger.error(f"events-by-date error: {ex}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+# ── OAuth fallback (auth-url / callback) ─────────────────────────────────────
+
+@router.get("/auth-url")
+async def get_auth_url(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["sub"]
+    url = gcal.get_auth_url(state=user_id)
+    return {"auth_url": url}
+
+
+@router.get("/callback")
+async def oauth_callback(code: str = Query(...), state: str = Query(...)):
+    try:
+        tokens = gcal.exchange_code(code)
+        gcal.save_tokens(state, tokens)
     except Exception as e:
-        logger.error(f"❌ Google Calendar connection error: {e}")
-        return {
-            "status": "error",
-            "message": f"Google Calendar connection failed: {str(e)}"
-        }
+        logger.error(f"OAuth callback error: {e}")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/calendar?error=auth_failed")
+    return RedirectResponse(f"{settings.FRONTEND_URL}/calendar?connected=1")
+
+
+@router.delete("/disconnect")
+async def disconnect(current_user: dict = Depends(get_current_user)):
+    execute_query("DELETE FROM google_tokens WHERE user_id = %s",
+                  (current_user["sub"],), fetch_all=False)
+    return {"disconnected": True}
