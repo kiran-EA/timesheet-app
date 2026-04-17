@@ -1,13 +1,20 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api import auth, jira, timesheet, calendar
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="TimeSync API - Phase 1",
     description="Express Analytics Timesheet & Jira Sync System",
     version="1.0.0"
 )
+
+# Debug: confirm the FRONTEND_URL value that was loaded from the environment
+logger.warning("CORS config — FRONTEND_URL resolved to: %s", settings.FRONTEND_URL)
 
 # CORS
 app.add_middleware(
