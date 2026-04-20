@@ -1,7 +1,12 @@
+import time
 import requests
 from requests.auth import HTTPBasicAuth
 from typing import Optional, Dict, Any
 from app.core.config import settings
+
+# Cache verify_user results for 30 min — skips 2 Jira calls on every repeat login
+_verify_cache: dict = {}
+_VERIFY_TTL = 1800
 
 class JiraService:
     def __init__(self):
@@ -44,6 +49,17 @@ class JiraService:
         return None
 
     def verify_user(self, email: str) -> Optional[Dict[str, Any]]:
+        # Return cached result if fresh — avoids 2 Jira API calls on every login
+        key = email.lower()
+        cached = _verify_cache.get(key)
+        if cached and time.time() - cached['ts'] < _VERIFY_TTL:
+            return cached['val']
+
+        def _cache_and_return(result):
+            if result:
+                _verify_cache[key] = {'ts': time.time(), 'val': result}
+            return result
+
         try:
             # 1. Check if this is the API credential user
             response = requests.get(
@@ -52,11 +68,11 @@ class JiraService:
             if response.ok:
                 user_data = response.json()
                 if user_data.get('emailAddress', '').lower() == email.lower():
-                    return {
+                    return _cache_and_return({
                         'account_id': user_data['accountId'],
                         'email': user_data['emailAddress'],
                         'display_name': user_data['displayName'],
-                    }
+                    })
 
                 # 2. Search for the user in Jira
                 for query in [email, email.split('@')[0]]:
@@ -70,19 +86,19 @@ class JiraService:
                     if search_resp.ok:
                         for user in search_resp.json():
                             if user.get('emailAddress', '').lower() == email.lower():
-                                return {
+                                return _cache_and_return({
                                     'account_id': user['accountId'],
                                     'email': user['emailAddress'],
                                     'display_name': user['displayName'],
-                                }
+                                })
 
             # 3. Jira API failed or user not found — fall back to domain check
             print(f"Jira lookup failed (status {response.status_code}) — using domain fallback")
-            return self._domain_fallback(email)
+            return _cache_and_return(self._domain_fallback(email))
 
         except Exception as e:
             print(f"Jira error: {e}")
-            return self._domain_fallback(email)
+            return _cache_and_return(self._domain_fallback(email))
 
     def check_connection(self) -> dict:
         """Return Jira connection status."""
@@ -148,6 +164,9 @@ class JiraService:
 
                 epic = fields.get("customfield_10014")
 
+                assignee_field = fields.get("assignee") or {}
+                assignee_name  = assignee_field.get("displayName")
+
                 tasks.append({
                     "id":               issue["id"],
                     "key":              issue["key"],
@@ -159,11 +178,100 @@ class JiraService:
                     "status":           fields.get("status", {}).get("name", "Unknown"),
                     "sprint":           sprint_name,
                     "is_active_sprint": False,  # filled in by the API
+                    "assignee":         assignee_name,
                 })
             return tasks
         except Exception as e:
             print(f"Jira get_user_tasks error: {e}")
             return []
+
+
+    def get_all_project_tasks(self) -> list:
+        """Fetch ALL open Jira issues in the project (no assignee filter) — for admin view."""
+        try:
+            jql = 'project = HSB AND statusCategory != Done ORDER BY updated DESC'
+            payload = {
+                "jql": jql,
+                "maxResults": 200,
+                "fields": [
+                    "summary", "status", "assignee",
+                    "customfield_10016",        # story points
+                    "customfield_10014",        # epic link
+                    "timeoriginalestimate",
+                    "timespent",
+                    "customfield_10020",        # sprint
+                ],
+            }
+            post_headers = {**self.headers, "Content-Type": "application/json"}
+            response = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers=post_headers,
+                json=payload,
+                timeout=15,
+            )
+            if not response.ok:
+                print(f"Jira /search/jql (all-tasks) failed: {response.status_code} {response.text[:200]}")
+                return []
+
+            tasks = []
+            for issue in response.json().get("issues", []):
+                fields = issue.get("fields", {})
+                summary = fields.get("summary", "")
+
+                sp = fields.get("customfield_10016") or fields.get("customfield_10028")
+                if sp is None:
+                    import re
+                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
+                    if m:
+                        sp = float(m.group(1))
+
+                est_hours = round(sp * 8, 2) if sp is not None else None
+
+                sprint_name = None
+                sprints = fields.get("customfield_10020") or []
+                if isinstance(sprints, list) and sprints:
+                    sprint_name = sprints[-1].get("name")
+
+                epic = fields.get("customfield_10014")
+
+                assignee_field = fields.get("assignee") or {}
+                assignee_name = assignee_field.get("displayName")
+
+                tasks.append({
+                    "id":               issue["id"],
+                    "key":              issue["key"],
+                    "title":            summary,
+                    "epic":             epic,
+                    "story_points":     sp,
+                    "est_hours":        est_hours,
+                    "logged_hours":     0,
+                    "status":           fields.get("status", {}).get("name", "Unknown"),
+                    "sprint":           sprint_name,
+                    "is_active_sprint": False,
+                    "assignee":         assignee_name,
+                })
+            return tasks
+        except Exception as e:
+            print(f"Jira get_all_project_tasks error: {e}")
+            return []
+
+    def get_all_sprint_keys(self) -> set:
+        """Return set of issue keys that are currently in an active sprint (project-wide)."""
+        try:
+            jql = 'project = HSB AND sprint in openSprints() AND statusCategory != Done'
+            r = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"jql": jql, "maxResults": 200, "fields": ["summary"]},
+                timeout=15,
+            )
+            if r.ok:
+                return {i["key"] for i in r.json().get("issues", [])}
+        except Exception as e:
+            print(f"get_all_sprint_keys error: {e}")
+        return set()
 
 
 jira_service = JiraService()

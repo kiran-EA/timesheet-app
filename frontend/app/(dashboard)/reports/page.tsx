@@ -1,105 +1,442 @@
 'use client';
 
-const teamStats = [
-  { name: 'Kiran Mangalvedhe', initials: 'KM', hours: 40, tasks: 7, sp: 18, status: 'On Track' },
-  { name: 'Rahul Sharma',      initials: 'RS', hours: 38, tasks: 5, sp: 14, status: 'On Track' },
-  { name: 'Priya Nair',        initials: 'PN', hours: 37.5, tasks: 4, sp: 11, status: 'On Track' },
-  { name: 'Amit Patel',        initials: 'AP', hours: 42, tasks: 6, sp: 16, status: 'Overtime' },
-];
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/authStore';
+import { t } from '@/lib/theme';
 
-export default function ReportsPage() {
-  const totalHours = teamStats.reduce((s, t) => s + t.hours, 0);
-  const totalSP = teamStats.reduce((s, t) => s + t.sp, 0);
+const API = process.env.NEXT_PUBLIC_API_URL;
+
+interface ResourceStat {
+  user_id: string;
+  full_name: string;
+  email: string;
+  avatar: string;
+  role: string;
+  total_hours: number;
+  total_entries: number;
+  pending_count: number;
+  approved_count: number;
+}
+
+interface TaskStat {
+  task_id: string;
+  task_title: string;
+  total_hours: number;
+  total_entries: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+}
+
+function aH(token: string) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+function getWeekRange() {
+  const today = new Date();
+  const mon = new Date(today);
+  mon.setDate(today.getDate() - today.getDay() + 1);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return { start: mon.toISOString().split('T')[0], end: sun.toISOString().split('T')[0] };
+}
+
+function getMonthRange() {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+  return { start, end };
+}
+
+type Preset = 'week' | 'month' | 'custom';
+
+// ── status pill ────────────────────────────────────────────────────────────────
+function StatusPill({ count, color, bg }: { count: number; color: string; bg: string }) {
+  if (!count) return <span style={{ color: t.textSubtle }}>—</span>;
+  return (
+    <span className="px-2.5 py-1 rounded-full text-xs font-bold tabular-nums"
+      style={{ background: bg, color }}>
+      {count}
+    </span>
+  );
+}
+
+// ── task breakdown sub-table ───────────────────────────────────────────────────
+function TaskBreakdown({
+  userId, startDate, endDate, token,
+}: {
+  userId: string; startDate: string; endDate: string; token: string;
+}) {
+  const [tasks, setTasks] = useState<TaskStat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(
+      `${API}/approvals/analytics/tasks?user_id=${userId}&start_date=${startDate}&end_date=${endDate}`,
+      { headers: aH(token) },
+    )
+      .then((r) => r.ok ? r.json() : { tasks: [] })
+      .then((d) => setTasks(d.tasks ?? []))
+      .catch(() => setTasks([]))
+      .finally(() => setLoading(false));
+  }, [userId, startDate, endDate, token]);
+
+  if (loading) {
+    return (
+      <tr>
+        <td colSpan={8} className="px-8 py-4 text-xs" style={{ color: t.textSubtle, background: t.cardBg2 }}>
+          Loading tasks…
+        </td>
+      </tr>
+    );
+  }
+
+  if (!tasks.length) {
+    return (
+      <tr>
+        <td colSpan={8} className="px-8 py-4 text-xs" style={{ color: t.textSubtle, background: t.cardBg2 }}>
+          No entries in this period.
+        </td>
+      </tr>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-8 h-[70px] flex-shrink-0"
-        style={{ background: 'rgba(30,41,59,0.3)', borderBottom: '1px solid #334155' }}
-      >
-        <div>
-          <h2 className="text-xl font-semibold text-white">Reports</h2>
-          <p className="text-sm" style={{ color: '#94a3b8' }}>Team analytics and insights</p>
+    <tr>
+      <td colSpan={8} style={{ background: t.cardBg2, padding: 0 }}>
+        <div className="px-8 py-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr>
+                {['Task', 'Title', 'Hours', 'Entries', 'Pending', 'Approved', 'Rejected'].map((h) => (
+                  <th key={h} className="py-2 pr-4 text-left font-semibold"
+                    style={{ color: t.textMuted, borderBottom: t.border, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((task) => (
+                <tr key={task.task_id} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
+                  <td className="py-2 pr-4 font-mono" style={{ color: '#7c3aed', minWidth: 90 }}>
+                    {task.task_id}
+                  </td>
+                  <td className="py-2 pr-4" style={{ color: t.text, maxWidth: 280 }}>
+                    <span className="line-clamp-1">{task.task_title}</span>
+                  </td>
+                  <td className="py-2 pr-4 font-mono font-bold" style={{ color: t.text }}>
+                    {Number(task.total_hours).toFixed(1)}h
+                  </td>
+                  <td className="py-2 pr-4 font-semibold" style={{ color: t.text }}>
+                    {Number(task.total_entries)}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <StatusPill count={Number(task.pending_count)} color="#d97706" bg="rgba(245,158,11,0.12)" />
+                  </td>
+                  <td className="py-2 pr-4">
+                    <StatusPill count={Number(task.approved_count)} color="#059669" bg="rgba(16,185,129,0.12)" />
+                  </td>
+                  <td className="py-2 pr-4">
+                    <StatusPill count={Number(task.rejected_count)} color="#dc2626" bg="rgba(239,68,68,0.12)" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <button
-          className="flex items-center gap-2 px-5 py-2 rounded-lg text-white font-semibold text-sm transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Export CSV
-        </button>
+      </td>
+    </tr>
+  );
+}
+
+// ── main page ──────────────────────────────────────────────────────────────────
+export default function ReportsPage() {
+  const token  = useAuthStore((s) => s.token) ?? '';
+  const user   = useAuthStore((s) => s.user);
+  const router = useRouter();
+
+  const [preset,    setPreset]    = useState<Preset>('week');
+  const [startDate, setStartDate] = useState(getWeekRange().start);
+  const [endDate,   setEndDate]   = useState(getWeekRange().end);
+  const [stats,     setStats]     = useState<ResourceStat[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [expanded,  setExpanded]  = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (user && user.role === 'resource') router.push('/timesheet');
+  }, [user, router]);
+
+  const applyPreset = (p: Preset) => {
+    setPreset(p);
+    setExpanded(new Set());
+    if (p === 'week')  { const r = getWeekRange();  setStartDate(r.start); setEndDate(r.end); }
+    if (p === 'month') { const r = getMonthRange(); setStartDate(r.start); setEndDate(r.end); }
+  };
+
+  const fetchAnalytics = useCallback(async () => {
+    if (!startDate || !endDate) return;
+    setLoading(true);
+    setExpanded(new Set());
+    try {
+      const res = await fetch(
+        `${API}/approvals/analytics?start_date=${startDate}&end_date=${endDate}`,
+        { headers: aH(token) },
+      );
+      if (res.ok) setStats((await res.json()).analytics ?? []);
+    } catch (ex) { console.error(ex); }
+    finally { setLoading(false); }
+  }, [token, startDate, endDate]);
+
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+
+  const toggleExpand = (userId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(userId) ? next.delete(userId) : next.add(userId);
+      return next;
+    });
+  };
+
+  // summary totals
+  const totalHours    = stats.reduce((s, r) => s + Number(r.total_hours   || 0), 0);
+  const totalEntries  = stats.reduce((s, r) => s + Number(r.total_entries || 0), 0);
+  const totalPending  = stats.reduce((s, r) => s + Number(r.pending_count || 0), 0);
+  const totalApproved = stats.reduce((s, r) => s + Number(r.approved_count || 0), 0);
+  const maxHours      = Math.max(...stats.map((r) => Number(r.total_hours || 0)), 1);
+
+  const roleLabel = user?.role === 'admin' ? 'All Resources' : 'Your Team';
+
+  const fmtDate = (d: string) =>
+    new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: t.pageBg }}>
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-8 h-[70px] flex-shrink-0"
+        style={{ background: t.headerBg, borderBottom: t.border }}>
+        <div>
+          <h2 className="text-xl font-semibold" style={{ color: t.text }}>Analytics</h2>
+          <p className="text-sm" style={{ color: t.textMuted }}>{roleLabel} — timesheet insights</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {(['week', 'month', 'custom'] as Preset[]).map((p) => (
+            <button key={p} onClick={() => applyPreset(p)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
+              style={preset === p
+                ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                : { border: t.border, color: t.textMuted, background: 'transparent' }}>
+              {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Custom'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8 space-y-6">
-        {/* Summary stats */}
+
+        {/* ── Custom date range ── */}
+        {preset === 'custom' && (
+          <div className="flex items-center gap-3 p-4 rounded-xl shadow-sm"
+            style={{ background: t.cardBg, border: t.border }}>
+            <label className="text-sm font-medium" style={{ color: t.textMuted }}>From</label>
+            <input type="date" value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="px-3 py-2 rounded-lg text-sm focus:outline-none"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
+            <label className="text-sm font-medium" style={{ color: t.textMuted }}>To</label>
+            <input type="date" value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="px-3 py-2 rounded-lg text-sm focus:outline-none"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
+          </div>
+        )}
+
+        {/* ── Date range label ── */}
+        <p className="text-sm" style={{ color: t.textSubtle }}>
+          {fmtDate(startDate)} – {fmtDate(endDate)}
+        </p>
+
+        {/* ── Summary stats ── */}
         <div className="grid grid-cols-4 gap-5">
           {[
-            { title: 'Total Team Hours', value: `${totalHours}h`, icon: '🕐', color: 'rgba(59,130,246,0.2)', tc: '#60a5fa' },
-            { title: 'Team Members', value: `${teamStats.length}`, icon: '👥', color: 'rgba(139,92,246,0.2)', tc: '#a78bfa' },
-            { title: 'Story Points', value: `${totalSP}`, icon: '⭐', color: 'rgba(16,185,129,0.2)', tc: '#34d399' },
-            { title: 'Avg Hours/Person', value: `${(totalHours / teamStats.length).toFixed(1)}h`, icon: '📊', color: 'rgba(245,158,11,0.2)', tc: '#fbbf24' },
+            { title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, icon: '🕐', color: 'rgba(59,130,246,0.15)' },
+            { title: 'Total Entries',      value: totalEntries,                         icon: '📝', color: 'rgba(139,92,246,0.15)' },
+            { title: 'Pending Approval',   value: totalPending,                         icon: '⏳', color: 'rgba(245,158,11,0.15)' },
+            { title: 'Approved',           value: totalApproved,                        icon: '✅', color: 'rgba(16,185,129,0.15)' },
           ].map((s) => (
-            <div key={s.title} className="rounded-xl p-5" style={{ background: 'linear-gradient(135deg,#1e293b 0%,#0f172a 100%)', border: '1px solid #334155' }}>
+            <div key={s.title} className="rounded-xl p-5 shadow-sm"
+              style={{ background: t.statGrad, border: t.border }}>
               <div className="flex items-start justify-between mb-3">
-                <span className="text-sm font-medium" style={{ color: '#94a3b8' }}>{s.title}</span>
-                <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg" style={{ background: s.color, color: s.tc }}>{s.icon}</span>
+                <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
+                <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
+                  style={{ background: s.color }}>{s.icon}</span>
               </div>
-              <div className="text-3xl font-bold text-white">{s.value}</div>
+              <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Team breakdown table */}
-        <div className="rounded-xl p-6" style={{ background: '#1e293b', border: '1px solid #334155' }}>
-          <h3 className="text-lg font-semibold text-white mb-5">Team Breakdown — Sprint 12</h3>
-          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #334155' }}>
-            <table className="w-full text-sm border-collapse">
-              <thead style={{ background: '#0f172a' }}>
+        {/* ── Resource breakdown table ── */}
+        <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
+          <div className="px-6 py-4" style={{ borderBottom: t.border }}>
+            <h3 className="font-semibold" style={{ color: t.text }}>
+              Resource Breakdown
+              <span className="ml-2 text-sm font-normal" style={{ color: t.textMuted }}>
+                ({stats.length} member{stats.length !== 1 ? 's' : ''})
+              </span>
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: t.textSubtle }}>
+              Click a row to expand task-level detail
+            </p>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-16" style={{ color: t.textSubtle }}>Loading analytics…</div>
+          ) : stats.length === 0 ? (
+            <div className="text-center py-16" style={{ color: t.textSubtle }}>No data for this period.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead style={{ background: t.tableHead }}>
                 <tr>
-                  {['Team Member', 'Hours Logged', 'Tasks', 'Story Points', 'Status'].map((h) => (
-                    <th key={h} className="px-4 py-3.5 text-left font-semibold" style={{ color: '#f1f5f9', borderBottom: '1px solid #334155', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <th className="w-8 px-4 py-3" />
+                  {['Member', 'Role', 'Hours Logged', 'Progress', 'Entries', 'Pending', 'Approved'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left font-semibold"
+                      style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {teamStats.map((t) => (
-                  <tr key={t.name} style={{ borderBottom: '1px solid #334155' }}>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
-                          {t.initials}
-                        </div>
-                        <span className="text-sm font-medium text-white">{t.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 font-mono font-semibold text-white">{t.hours}h</td>
-                    <td className="px-4 py-4 text-center font-semibold text-white">{t.tasks}</td>
-                    <td className="px-4 py-4 text-center font-semibold text-white">{t.sp}</td>
-                    <td className="px-4 py-4">
-                      <span
-                        className="px-3 py-1 rounded-full text-xs font-semibold"
-                        style={
-                          t.status === 'On Track'
-                            ? { background: 'rgba(16,185,129,0.2)', color: '#34d399' }
-                            : { background: 'rgba(245,158,11,0.2)', color: '#fbbf24' }
-                        }
-                      >
-                        {t.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {stats.map((r) => {
+                  const hours    = Number(r.total_hours   || 0);
+                  const entries  = Number(r.total_entries || 0);
+                  const pending  = Number(r.pending_count || 0);
+                  const approved = Number(r.approved_count || 0);
+                  const pct      = Math.min(100, Math.round((hours / maxHours) * 100));
+                  const barColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b';
+                  const isOpen   = expanded.has(r.user_id);
+
+                  return (
+                    <>
+                      {/* resource row */}
+                      <tr key={r.user_id}
+                        onClick={() => toggleExpand(r.user_id)}
+                        className="cursor-pointer transition-colors"
+                        style={{
+                          borderBottom: isOpen ? 'none' : t.border,
+                          background: isOpen ? `${t.cardBg2}` : 'transparent',
+                        }}
+                        onMouseEnter={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = `${t.tableHead}`; }}
+                        onMouseLeave={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+
+                        {/* expand chevron */}
+                        <td className="px-4 py-4 text-center" style={{ color: t.textMuted }}>
+                          <svg className="w-4 h-4 inline transition-transform"
+                            style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="9 18 15 12 9 6" />
+                          </svg>
+                        </td>
+
+                        {/* member */}
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                              style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+                              {r.avatar || r.full_name[0]}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-sm" style={{ color: t.text }}>{r.full_name}</p>
+                              <p className="text-xs" style={{ color: t.textSubtle }}>{r.email}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* role */}
+                        <td className="px-5 py-4">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold capitalize"
+                            style={{
+                              background: r.role === 'teamlead' ? 'rgba(139,92,246,0.12)' : 'rgba(59,130,246,0.12)',
+                              color:      r.role === 'teamlead' ? '#7c3aed' : '#3b82f6',
+                            }}>
+                            {r.role}
+                          </span>
+                        </td>
+
+                        {/* hours */}
+                        <td className="px-5 py-4 font-mono font-bold" style={{ color: t.text }}>
+                          {hours.toFixed(1)}h
+                        </td>
+
+                        {/* progress */}
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2 min-w-[120px]">
+                            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
+                              <div className="h-full rounded-full transition-all"
+                                style={{ width: `${pct}%`, background: barColor }} />
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums" style={{ color: barColor, minWidth: 32 }}>
+                              {pct}%
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* entries */}
+                        <td className="px-5 py-4 text-center font-semibold" style={{ color: t.text }}>
+                          {entries}
+                        </td>
+
+                        {/* pending */}
+                        <td className="px-5 py-4 text-center">
+                          <StatusPill count={pending} color="#d97706" bg="rgba(245,158,11,0.12)" />
+                        </td>
+
+                        {/* approved */}
+                        <td className="px-5 py-4 text-center">
+                          <StatusPill count={approved} color="#059669" bg="rgba(16,185,129,0.12)" />
+                        </td>
+                      </tr>
+
+                      {/* task drill-down */}
+                      {isOpen && (
+                        <TaskBreakdown
+                          userId={r.user_id}
+                          startDate={startDate}
+                          endDate={endDate}
+                          token={token}
+                        />
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
+
+              {/* totals row */}
+              {stats.length > 1 && (
+                <tfoot>
+                  <tr style={{ background: t.tableHead }}>
+                    <td className="px-4 py-3" />
+                    <td className="px-5 py-3 font-bold text-sm" style={{ color: t.text }} colSpan={2}>
+                      Total
+                    </td>
+                    <td className="px-5 py-3 font-mono font-bold" style={{ color: t.text }}>
+                      {totalHours.toFixed(1)}h
+                    </td>
+                    <td className="px-5 py-3" />
+                    <td className="px-5 py-3 text-center font-bold" style={{ color: t.text }}>{totalEntries}</td>
+                    <td className="px-5 py-3 text-center font-bold" style={{ color: '#d97706' }}>{totalPending || '—'}</td>
+                    <td className="px-5 py-3 text-center font-bold" style={{ color: '#059669' }}>{totalApproved || '—'}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
-          </div>
+          )}
         </div>
+
       </div>
     </div>
   );

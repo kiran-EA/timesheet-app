@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import auth, jira, timesheet, calendar
+from app.api import auth, jira, timesheet, calendar, approvals, users
 
 app = FastAPI(
     title="TimeSync API - Phase 1",
@@ -23,6 +23,21 @@ app.include_router(auth.router)
 app.include_router(jira.router)
 app.include_router(timesheet.router)
 app.include_router(calendar.router)
+app.include_router(approvals.router)
+app.include_router(users.router)
+
+@app.on_event("startup")
+async def run_migrations():
+    """Add new columns that may not exist in the live DB yet."""
+    from app.db.database import execute_query
+    try:
+        execute_query(
+            "ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS epic VARCHAR(200)",
+            fetch_all=False,
+        )
+    except Exception as e:
+        print(f"Migration warning: {e}")
+
 
 @app.get("/")
 async def root():

@@ -9,6 +9,8 @@ class TimesheetEntryCreate(BaseModel):
     entry_date: date
     work_description: str
     hours: float
+    target_user_id: Optional[str] = None   # admin only: log entry for another user
+    epic: Optional[str] = None              # Jira epic key
 
 
 class TimesheetEntryResponse(BaseModel):
@@ -19,8 +21,12 @@ class TimesheetEntryResponse(BaseModel):
     entry_date: date
     work_description: str
     hours: float
+    status: Optional[str] = "pending"
+    rejection_reason: Optional[str] = None
+    approved_by: Optional[str] = None
     est_hours: Optional[float] = None
     total_logged: Optional[float] = None
+    epic: Optional[str] = None
 
 
 class JiraTask(BaseModel):
@@ -34,3 +40,4 @@ class JiraTask(BaseModel):
     status: str
     sprint: Optional[str] = None
     is_active_sprint: bool = False
+    assignee: Optional[str] = None

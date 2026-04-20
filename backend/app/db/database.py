@@ -11,33 +11,49 @@ pool = SimpleConnectionPool(
     database=settings.REDSHIFT_DATABASE,
     user=settings.REDSHIFT_USER,
     password=settings.REDSHIFT_PASSWORD,
-    sslmode='require'
+    sslmode='require',
+    options=f"-c search_path={settings.REDSHIFT_SCHEMA}",
+    keepalives=1,
+    keepalives_idle=30,
+    keepalives_interval=10,
+    keepalives_count=5,
 )
 
-@contextmanager
-def get_db_connection():
+def _get_healthy_conn():
+    """Get a connection from the pool, replacing it if Neon closed it."""
     conn = pool.getconn()
     try:
-        with conn.cursor() as cur:
-            cur.execute(f"SET search_path TO {settings.REDSHIFT_SCHEMA}")
-        conn.commit()
-        yield conn
-    finally:
-        pool.putconn(conn)
+        # Lightweight ping — detects stale connections instantly
+        conn.cursor().execute("SELECT 1")
+        return conn
+    except Exception:
+        # Connection is dead; discard it and open a fresh one
+        try:
+            pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        return pool.getconn()
 
 @contextmanager
 def get_db_cursor(commit=True):
-    with get_db_connection() as conn:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+    conn = _get_healthy_conn()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        yield cursor
+        if commit:
+            conn.commit()
+    except Exception as e:
         try:
-            yield cursor
-            if commit:
-                conn.commit()
-        except Exception as e:
             conn.rollback()
-            raise e
-        finally:
+        except Exception:
+            pass
+        raise e
+    finally:
+        try:
             cursor.close()
+        except Exception:
+            pass
+        pool.putconn(conn)
 
 def execute_query(query: str, params: tuple = None, fetch_one=False, fetch_all=True):
     with get_db_cursor() as cursor:

@@ -166,36 +166,29 @@ def get_events(user_id: str, user_email: str, time_min: str, time_max: str) -> l
         return []
 
 
-def _is_accepted(event: dict) -> bool:
+def _get_response_status(event: dict) -> str:
     """
-    Return True if the calendar user has accepted this event (or is the organizer).
-
-    Rules:
-      - No attendees list → personal/self-created event → include
-      - User is organizer (organizer.self == True) → include
-      - User's attendee entry has responseStatus == 'accepted' → include
-      - responseStatus == 'tentative' → include (tentative acceptance)
-      - responseStatus == 'declined' or 'needsAction' → exclude
+    Derive the user's response status for this event:
+      personal   — no attendees (self-created / personal event)
+      organizer  — user is the organizer
+      accepted   — user accepted the invite
+      tentative  — user tentatively accepted
+      declined   — user declined
+      needsAction — user hasn't responded yet
     """
     attendees = event.get("attendees", [])
-
-    # Personal event (no invitees) or created by this user alone
     if not attendees:
-        return True
+        return "personal"
 
-    # User is the organizer
     organizer = event.get("organizer", {})
     if organizer.get("self"):
-        return True
+        return "organizer"
 
-    # Check the user's own attendee entry (marked with self=True)
     for attendee in attendees:
         if attendee.get("self"):
-            status = attendee.get("responseStatus", "needsAction")
-            return status in ("accepted", "tentative")
+            return attendee.get("responseStatus", "needsAction")
 
-    # No self entry found — likely a calendar-wide event, include it
-    return True
+    return "accepted"   # no self entry → calendar-wide event, treat as accepted
 
 
 def _fetch_events(service, time_min: str, time_max: str) -> list:
@@ -210,19 +203,16 @@ def _fetch_events(service, time_min: str, time_max: str) -> list:
 
     events = []
     for e in result.get("items", []):
-        # Only include events the user has accepted (or is organizer of)
-        if not _is_accepted(e):
-            continue
-
         start = e.get("start", {})
         end   = e.get("end",   {})
         events.append({
-            "id":       e.get("id"),
-            "title":    e.get("summary", "(No title)"),
-            "start":    start.get("dateTime") or start.get("date"),
-            "end":      end.get("dateTime")   or end.get("date"),
-            "all_day":  "date" in start and "dateTime" not in start,
-            "location": e.get("location", ""),
-            "status":   e.get("status", ""),
+            "id":              e.get("id"),
+            "title":           e.get("summary", "(No title)"),
+            "start":           start.get("dateTime") or start.get("date"),
+            "end":             end.get("dateTime")   or end.get("date"),
+            "all_day":         "date" in start and "dateTime" not in start,
+            "location":        e.get("location", ""),
+            "status":          e.get("status", ""),
+            "response_status": _get_response_status(e),
         })
     return events

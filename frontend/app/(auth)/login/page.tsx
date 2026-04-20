@@ -44,10 +44,12 @@ export default function LoginPage() {
       const data = await res.json();
       setToken(data.access_token);
       setUser({
-        id: data.user.user_id,
-        email: data.user.email,
-        name: data.user.full_name,
-        role: data.user.role as 'user',
+        id:         data.user.user_id,
+        email:      data.user.email,
+        name:       data.user.full_name,
+        role:       data.user.role,
+        avatar:     data.user.avatar,
+        manager_id: data.user.manager_id ?? null,
       });
       router.push('/timesheet');
     } catch {

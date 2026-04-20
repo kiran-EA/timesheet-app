@@ -1,153 +1,106 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-import logging
-from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import Optional, List
 from app.core.security import get_current_user
-from app.db.queries import get_user_by_id
+from app.db import queries
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/users", tags=["User Management"])
+router = APIRouter(prefix="/users", tags=["Users"])
 
-class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
-    role: Optional[str] = None
+
+def require_admin(current_user: dict):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
 
 @router.get("/me")
-async def get_profile(current_user: dict = Depends(get_current_user)):
-    """Get current user's profile"""
-    logger.info(f"👤 Fetching profile for user: {current_user['sub']}")
-    
-    try:
-        user = get_user_by_id(current_user['sub'])
-        if not user:
-            logger.error(f"❌ User not found: {current_user['sub']}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        logger.info(f"✅ Profile retrieved for: {user['email']}")
-        
-        return {
-            "success": True,
-            "user": {
-                "user_id": user['user_id'],
-                "email": user['email'],
-                "full_name": user['full_name'],
-                "role": user['role'],
-                "avatar": user.get('avatar', ''),
-                "is_active": user['is_active']
-            }
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"❌ Error fetching profile: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch profile: {str(e)}"
-        )
+async def get_me(current_user: dict = Depends(get_current_user)):
+    user = queries.get_user_by_id(current_user["sub"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(user)
 
-@router.put("/me")
-async def update_profile(user_update: UserUpdate, current_user: dict = Depends(get_current_user)):
-    """Update current user's profile"""
-    logger.info(f"✏️ Updating profile for user: {current_user['sub']}")
-    
-    try:
-        # In production, you would update this in the database
-        user = get_user_by_id(current_user['sub'])
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Log what's being updated
-        if user_update.full_name:
-            logger.info(f"   - Updating full_name to: {user_update.full_name}")
-        if user_update.role:
-            logger.info(f"   - Updating role to: {user_update.role}")
-        
-        logger.info(f"✅ Profile updated for user: {current_user['sub']}")
-        
-        # Return updated user
-        updated_user = {
-            "user_id": user['user_id'],
-            "email": user['email'],
-            "full_name": user_update.full_name or user['full_name'],
-            "role": user_update.role or user['role'],
-            "avatar": user.get('avatar', ''),
-            "is_active": user['is_active']
-        }
-        
-        return {
-            "success": True,
-            "message": "Profile updated successfully",
-            "user": updated_user
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"❌ Error updating profile: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update profile: {str(e)}"
-        )
 
-@router.get("/search")
-async def search_users(query: str = "", current_user: dict = Depends(get_current_user)):
-    """Search for users by email or name"""
-    logger.info(f"🔍 Searching for users: {query}")
-    
-    try:
-        # In production, this would query the database
-        # For now, return empty or mock results
-        logger.info(f"⚠️  User search functionality not fully implemented")
-        
-        return {
-            "success": True,
-            "query": query,
-            "results": []
-        }
-    except Exception as e:
-        logger.error(f"❌ Error searching users: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search users: {str(e)}"
-        )
+@router.get("/all")
+async def get_all_users(current_user: dict = Depends(get_current_user)):
+    """Admin only — all users with manager name and resource count."""
+    require_admin(current_user)
+    return {"users": [dict(u) for u in queries.get_all_users_with_details()]}
 
-@router.get("/{user_id}")
-async def get_user_details(user_id: str, current_user: dict = Depends(get_current_user)):
-    """Get details for a specific user (accessible by authorized users)"""
-    logger.info(f"👥 Fetching user details for: {user_id}")
-    
-    try:
-        user = get_user_by_id(user_id)
-        if not user:
-            logger.warning(f"❌ User not found: {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        logger.info(f"✅ User details retrieved for: {user['email']}")
-        
-        return {
-            "success": True,
-            "user": {
-                "user_id": user['user_id'],
-                "email": user['email'],
-                "full_name": user['full_name'],
-                "role": user['role'],
-                "avatar": user.get('avatar', ''),
-                "is_active": user['is_active']
-            }
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"❌ Error fetching user details: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch user details: {str(e)}"
-        )
+
+@router.get("/subordinates")
+async def get_subordinates(current_user: dict = Depends(get_current_user)):
+    """Return direct reports for current user (teamlead/admin)."""
+    if current_user.get("role") not in ("teamlead", "admin"):
+        raise HTTPException(status_code=403, detail="Teamlead or Admin access required")
+    subs = queries.get_subordinates(current_user["sub"])
+    return {"subordinates": [dict(s) for s in subs]}
+
+
+class AssignBody(BaseModel):
+    user_id: str
+    role: str
+    manager_id: Optional[str] = None
+
+
+@router.put("/assign")
+async def assign_user(body: AssignBody, current_user: dict = Depends(get_current_user)):
+    """Admin: update a user's role and/or manager."""
+    require_admin(current_user)
+    if body.role not in ("admin", "teamlead", "resource"):
+        raise HTTPException(status_code=400, detail="role must be admin, teamlead, or resource")
+    if body.role != "admin" and not body.manager_id:
+        raise HTTPException(status_code=400, detail="manager_id required for teamlead and resource")
+    queries.update_user_role_and_manager(body.user_id, body.role, body.manager_id)
+    queries.bust("subs:")
+    return {"status": "updated"}
+
+
+@router.put("/{resource_id}/unassign")
+async def unassign_resource(resource_id: str, current_user: dict = Depends(get_current_user)):
+    """Admin: immediately remove a resource from their current manager."""
+    require_admin(current_user)
+    queries.set_users_manager([resource_id], None)
+    queries.bust("subs:")
+    return {"status": "unassigned"}
+
+
+class ConfigureUserBody(BaseModel):
+    role: str
+    manager_id: Optional[str] = None
+    resource_ids: List[str] = []   # users to place under this user (teamlead only)
+
+
+@router.put("/{user_id}/configure")
+async def configure_user(
+    user_id: str,
+    body: ConfigureUserBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin: set role + manager for a user, and optionally assign resources under a teamlead."""
+    require_admin(current_user)
+    if body.role not in ("admin", "teamlead", "resource"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    # 1. Update this user's own role and manager
+    queries.update_user_role_and_manager(user_id, body.role, body.manager_id or None)
+
+    # 2. Handle subordinate assignments
+    if body.role in ("teamlead", "admin"):
+        # Both teamleads and admins can manage resources
+        current_subs = {s["user_id"] for s in queries.get_subordinates(user_id)}
+        new_subs = set(body.resource_ids)
+        to_unassign = list(current_subs - new_subs)
+        to_assign   = list(new_subs - current_subs)
+        if to_unassign:
+            queries.set_users_manager(to_unassign, None)
+        if to_assign:
+            queries.set_users_manager(to_assign, user_id)
+    else:
+        # If changing away from teamlead/admin, release all their current resources
+        current_subs = [s["user_id"] for s in queries.get_subordinates(user_id)]
+        if current_subs:
+            queries.set_users_manager(current_subs, None)
+
+    queries.bust("subs:")
+    queries.bust("pending:")
+    return {"status": "configured"}
