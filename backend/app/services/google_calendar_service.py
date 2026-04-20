@@ -39,17 +39,23 @@ def _service_account_path() -> str:
     return os.path.join(base, settings.GOOGLE_SERVICE_ACCOUNT_FILE)
 
 
+def _service_account_content() -> str:
+    """Read service account JSON from env var directly (bypasses pydantic parsing)."""
+    return os.environ.get("GOOGLE_SERVICE_ACCOUNT_CONTENT", "").strip()
+
+
 def is_service_account_available() -> bool:
-    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT:
+    if _service_account_content():
         return True
     return os.path.exists(_service_account_path())
 
 
 def get_service_account_credentials(user_email: str):
     """Return credentials impersonating user_email via domain-wide delegation."""
-    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT:
+    content = _service_account_content()
+    if content:
         import json
-        info = json.loads(settings.GOOGLE_SERVICE_ACCOUNT_CONTENT)
+        info = json.loads(content)
         creds = service_account.Credentials.from_service_account_info(
             info, scopes=SCOPES,
         ).with_subject(user_email)
