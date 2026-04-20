@@ -50,7 +50,13 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    from app.core.config import settings
+    return {
+        "status": "healthy",
+        "service_account_env": bool(settings.GOOGLE_SERVICE_ACCOUNT_CONTENT),
+        "service_account_file": __import__("os").path.exists("service-account.json"),
+        "frontend_url": settings.FRONTEND_URL,
+    }
 
 if __name__ == "__main__":
     import uvicorn
