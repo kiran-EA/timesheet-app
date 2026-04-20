@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str
     GOOGLE_REDIRECT_URI: str
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "service-account.json"
-    GOOGLE_ADMIN_EMAIL: str = ""          # org admin email for impersonation
+    GOOGLE_SERVICE_ACCOUNT_CONTENT: str = ""   # JSON string — used on Render instead of file
+    GOOGLE_ADMIN_EMAIL: str = ""               # org admin email for impersonation
     
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

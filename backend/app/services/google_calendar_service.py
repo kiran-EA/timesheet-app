@@ -40,15 +40,23 @@ def _service_account_path() -> str:
 
 
 def is_service_account_available() -> bool:
+    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT:
+        return True
     return os.path.exists(_service_account_path())
 
 
 def get_service_account_credentials(user_email: str):
     """Return credentials impersonating user_email via domain-wide delegation."""
-    creds = service_account.Credentials.from_service_account_file(
-        _service_account_path(),
-        scopes=SCOPES,
-    ).with_subject(user_email)
+    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT:
+        import json
+        info = json.loads(settings.GOOGLE_SERVICE_ACCOUNT_CONTENT)
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=SCOPES,
+        ).with_subject(user_email)
+    else:
+        creds = service_account.Credentials.from_service_account_file(
+            _service_account_path(), scopes=SCOPES,
+        ).with_subject(user_email)
     return creds
 
 
