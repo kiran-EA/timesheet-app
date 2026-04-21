@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from app.core.security import get_current_user
 from app.services.jira_service import jira_service
 from app.schemas.timesheet import JiraTask
 from app.db import queries
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 import time
 
 router = APIRouter(prefix="/jira", tags=["Jira"])
@@ -178,3 +179,198 @@ async def get_general_tasks(
             "sprint":       None,
         })
     return result
+
+
+# ── Epic / Project Level Dashboard ────────────────────────────────────────────
+
+@router.get("/epic-dashboard")
+async def get_epic_dashboard(
+    start_date: str  = Query(..., description="YYYY-MM-DD"),
+    end_date: str    = Query(..., description="YYYY-MM-DD"),
+    sprint_only: bool = Query(False, description="Show only active-sprint tasks"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only — Project Level Dashboard: all Jira epics with team breakdown
+    and hours logged from DB for the given date range."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # ── 1. Jira data (cached 5 min) ──────────────────────────────────────────
+    all_tasks, active_keys = _fetch_all_tasks_cached()
+
+    # Remove general-purpose housekeeping tasks
+    jira_tasks = [t for t in all_tasks if t["key"] not in GENERAL_TASK_KEYS]
+
+    # Optionally limit to sprint tasks only
+    if sprint_only:
+        jira_tasks = [t for t in jira_tasks if t["key"] in active_keys]
+
+    # ── 2. Group Jira tasks by epic ──────────────────────────────────────────
+    # epic_meta: { epic_key -> {name, tasks: [task_dict]} }
+    epic_meta: dict = {}
+    for task in jira_tasks:
+        epic_key = task.get("epic")
+        if not epic_key:
+            continue
+        if epic_key not in epic_meta:
+            epic_meta[epic_key] = {"name": task.get("epic_name"), "tasks": []}
+        elif not epic_meta[epic_key]["name"] and task.get("epic_name"):
+            epic_meta[epic_key]["name"] = task["epic_name"]
+        epic_meta[epic_key]["tasks"].append(task)
+
+    # ── 3. DB logged hours for date range ────────────────────────────────────
+    # Returns rows: {user_id, task_id, task_title, epic, total_hours, total_entries}
+    db_rows = queries.get_epic_dashboard_entries(start_date, end_date)
+
+    # Build: db_by_epic[epic_key][user_id][task_id] = hours
+    db_by_epic: dict = defaultdict(lambda: defaultdict(dict))
+    for row in db_rows:
+        epic = row.get("epic") or ""
+        db_by_epic[epic][row["user_id"]][row["task_id"]] = float(row["total_hours"])
+
+    # ── 4. All active users for name / avatar lookup ─────────────────────────
+    all_users = queries.get_all_users()
+    user_map  = {u["user_id"]: u for u in all_users}  # user_id  → user
+    name_map  = {u["full_name"].lower(): u for u in all_users}  # display_name → user
+
+    def _find_by_display_name(display: str):
+        return name_map.get((display or "").lower())
+
+    # ── 5. Build per-epic result ─────────────────────────────────────────────
+    result = []
+    for epic_key, meta in epic_meta.items():
+        epic_tasks = meta["tasks"]
+        total_est  = round(sum(t.get("est_hours") or 0 for t in epic_tasks), 2)
+        active_cnt = sum(1 for t in epic_tasks if t["key"] in active_keys)
+
+        db_epic = db_by_epic.get(epic_key, {})
+        total_logged = round(sum(sum(v.values()) for v in db_epic.values()), 2)
+        pct = round((total_logged / total_est * 100) if total_est > 0 else 0)
+
+        # ── Build member list ─────────────────────────────────────────────
+        # Seed with Jira assignees (display name → DB user match)
+        members_dict: dict = {}  # user_id (or placeholder) → member
+
+        for task in epic_tasks:
+            assignee_name = task.get("assignee") or ""
+            db_user = _find_by_display_name(assignee_name)
+            uid = db_user["user_id"] if db_user else f"jira__{assignee_name}"
+
+            if uid not in members_dict:
+                members_dict[uid] = {
+                    "user_id":   uid,
+                    "full_name": db_user["full_name"] if db_user else (assignee_name or "Unassigned"),
+                    "email":     db_user["email"]     if db_user else "",
+                    "avatar":    (db_user.get("avatar") or db_user["full_name"][0].upper()) if db_user
+                                 else (assignee_name[:1].upper() or "?"),
+                    "role":      db_user.get("role", "resource") if db_user else "resource",
+                    "tasks":     [],
+                }
+            members_dict[uid]["tasks"].append(task)
+
+        # Also include DB users who logged hours but aren't Jira assignees
+        for uid in db_epic:
+            if uid not in members_dict:
+                u = user_map.get(uid)
+                if u:
+                    members_dict[uid] = {
+                        "user_id":   uid,
+                        "full_name": u["full_name"],
+                        "email":     u["email"],
+                        "avatar":    u.get("avatar") or u["full_name"][0].upper(),
+                        "role":      u.get("role", "resource"),
+                        "tasks":     [],
+                    }
+
+        # Compute logged hours per member per task
+        members = []
+        for uid, m in members_dict.items():
+            member_task_hours = db_epic.get(uid, {})
+            member_logged = round(sum(member_task_hours.values()), 2)
+            member_tasks = [
+                {
+                    "key":             t["key"],
+                    "title":           t["title"],
+                    "est_hours":       t.get("est_hours"),
+                    "logged_hours":    round(member_task_hours.get(t["key"], 0.0), 2),
+                    "status":          t["status"],
+                    "is_active_sprint": t["key"] in active_keys,
+                }
+                for t in m["tasks"]
+            ]
+            members.append({
+                "user_id":      uid,
+                "full_name":    m["full_name"],
+                "email":        m["email"],
+                "avatar":       m["avatar"],
+                "role":         m["role"],
+                "total_logged": member_logged,
+                "tasks":        member_tasks,
+            })
+
+        members.sort(key=lambda x: x["full_name"])
+
+        result.append({
+            "epic_key":           epic_key,
+            "epic_name":          meta["name"],
+            "total_tasks":        len(epic_tasks),
+            "active_sprint_tasks": active_cnt,
+            "total_est_hours":    total_est,
+            "total_logged_hours": total_logged,
+            "pct_complete":       pct,
+            "member_count":       len(members),
+            "members":            members,
+        })
+
+    # Most-logged epics first; epics with 0 hours sorted alphabetically at end
+    result.sort(key=lambda e: (-e["total_logged_hours"], e["epic_key"]))
+
+    # ── 6. General-purpose section (Holiday / Leave / Meeting etc.) ──────────
+    # These tasks have task_id in GENERAL_TASK_KEYS; epic col may be blank or
+    # set to the purpose string.  Group them under a synthetic "GENERAL" epic.
+    general_logged = 0.0
+    general_members_dict: dict = {}
+    general_key_set = {b["key"] for b in GENERAL_TASKS_BASE}
+
+    for row in db_rows:
+        if row["task_id"] not in general_key_set:
+            continue
+        uid = row["user_id"]
+        u   = user_map.get(uid)
+        if not u:
+            continue
+        general_logged += float(row["total_hours"])
+        if uid not in general_members_dict:
+            general_members_dict[uid] = {
+                "user_id":   uid,
+                "full_name": u["full_name"],
+                "email":     u["email"],
+                "avatar":    u.get("avatar") or u["full_name"][0].upper(),
+                "role":      u.get("role", "resource"),
+                "total_logged": 0.0,
+                "tasks": [],
+            }
+        general_members_dict[uid]["total_logged"] += float(row["total_hours"])
+        general_members_dict[uid]["tasks"].append({
+            "key":             row["task_id"],
+            "title":           row["task_title"],
+            "est_hours":       None,
+            "logged_hours":    float(row["total_hours"]),
+            "status":          "Active",
+            "is_active_sprint": False,
+        })
+
+    if general_members_dict:
+        result.append({
+            "epic_key":           "GENERAL",
+            "epic_name":          "General Purpose (Holiday / Leave / Meetings)",
+            "total_tasks":        len(general_key_set),
+            "active_sprint_tasks": 0,
+            "total_est_hours":    None,
+            "total_logged_hours": round(general_logged, 2),
+            "pct_complete":       None,
+            "member_count":       len(general_members_dict),
+            "members":            sorted(general_members_dict.values(), key=lambda x: x["full_name"]),
+        })
+
+    return {"epics": result, "date_range": {"start": start_date, "end": end_date}}

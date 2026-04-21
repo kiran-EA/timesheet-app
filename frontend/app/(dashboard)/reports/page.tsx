@@ -342,12 +342,377 @@ function ResourceSection({
   );
 }
 
+// ── Epic / Project dashboard types ────────────────────────────────────────────
+interface EpicMemberTask {
+  key: string;
+  title: string;
+  est_hours: number | null;
+  logged_hours: number;
+  status: string;
+  is_active_sprint: boolean;
+}
+
+interface EpicMember {
+  user_id: string;
+  full_name: string;
+  email: string;
+  avatar: string;
+  role: string;
+  total_logged: number;
+  tasks: EpicMemberTask[];
+}
+
+interface EpicStat {
+  epic_key: string;
+  epic_name: string | null;
+  total_tasks: number;
+  active_sprint_tasks: number;
+  total_est_hours: number | null;
+  total_logged_hours: number;
+  pct_complete: number | null;
+  member_count: number;
+  members: EpicMember[];
+}
+
+// ── Epic row (expandable) ──────────────────────────────────────────────────────
+function EpicRow({ epic, isOpen, onToggle }: { epic: EpicStat; isOpen: boolean; onToggle: () => void }) {
+  const logged  = Number(epic.total_logged_hours || 0);
+  const est     = epic.total_est_hours != null ? Number(epic.total_est_hours) : null;
+  const pct     = epic.pct_complete ?? (est && est > 0 ? Math.min(100, Math.round((logged / est) * 100)) : 0);
+  const barColor = pct >= 100 ? '#10b981' : pct >= 75 ? '#3b82f6' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  const isGeneral = epic.epic_key === 'GENERAL';
+
+  return (
+    <>
+      {/* ── Summary row ── */}
+      <tr
+        onClick={onToggle}
+        className="cursor-pointer transition-colors"
+        style={{ borderBottom: isOpen ? 'none' : t.border, background: isOpen ? t.cardBg2 : 'transparent' }}
+        onMouseEnter={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = t.tableHead; }}
+        onMouseLeave={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        {/* chevron */}
+        <td className="px-4 py-4 text-center" style={{ color: t.textMuted }}>
+          <svg className="w-4 h-4 inline transition-transform"
+            style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </td>
+
+        {/* epic key + name */}
+        <td className="px-5 py-4">
+          <div className="flex flex-col gap-0.5">
+            {epic.epic_name && (
+              <span className="text-xs font-medium" style={{ color: t.textMuted }}>{epic.epic_name}</span>
+            )}
+            <span className="px-2.5 py-1 rounded-md text-xs font-bold w-fit"
+              style={isGeneral
+                ? { background: 'rgba(245,158,11,0.12)', color: '#d97706' }
+                : { background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+              {epic.epic_key}
+            </span>
+          </div>
+        </td>
+
+        {/* sprint badge */}
+        <td className="px-5 py-4">
+          {isGeneral ? (
+            <span style={{ color: t.textSubtle }}>—</span>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold" style={{ color: t.text }}>{epic.total_tasks} tasks</span>
+              {epic.active_sprint_tasks > 0 && (
+                <span className="px-2 py-0.5 rounded text-xs font-semibold w-fit"
+                  style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
+                  {epic.active_sprint_tasks} in sprint
+                </span>
+              )}
+            </div>
+          )}
+        </td>
+
+        {/* est hours */}
+        <td className="px-5 py-4 font-mono font-semibold" style={{ color: t.textMuted }}>
+          {est != null ? `${est}h` : '—'}
+        </td>
+
+        {/* logged hours */}
+        <td className="px-5 py-4 font-mono font-bold" style={{ color: t.text }}>
+          {logged.toFixed(1)}h
+        </td>
+
+        {/* % complete */}
+        <td className="px-5 py-4">
+          {est != null ? (
+            <div className="flex items-center gap-2 min-w-[120px]">
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+              </div>
+              <span className="text-xs font-bold tabular-nums" style={{ color: barColor, minWidth: 36 }}>{pct}%</span>
+            </div>
+          ) : (
+            <span style={{ color: t.textSubtle }}>—</span>
+          )}
+        </td>
+
+        {/* member count */}
+        <td className="px-5 py-4 text-center font-semibold" style={{ color: t.text }}>
+          {epic.member_count}
+        </td>
+      </tr>
+
+      {/* ── Expanded member rows ── */}
+      {isOpen && (
+        <tr>
+          <td colSpan={7} style={{ background: t.cardBg2, padding: 0 }}>
+            <div className="px-8 py-4 space-y-4">
+              {epic.members.length === 0 ? (
+                <p className="text-sm" style={{ color: t.textSubtle }}>No members assigned.</p>
+              ) : (
+                epic.members.map((member) => (
+                  <MemberBlock key={member.user_id} member={member} />
+                ))
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ── Member block inside expanded epic ─────────────────────────────────────────
+function MemberBlock({ member }: { member: EpicMember }) {
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
+      {/* member header */}
+      <div className="flex items-center gap-3 px-4 py-3" style={{ background: t.tableHead, borderBottom: t.border }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+          {member.avatar || member.full_name[0]}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm" style={{ color: t.text }}>{member.full_name}</p>
+          <p className="text-xs" style={{ color: t.textSubtle }}>{member.email}</p>
+        </div>
+        <RoleBadge role={member.role} />
+        <span className="ml-2 text-sm font-bold font-mono px-3 py-1 rounded-lg"
+          style={{ background: member.total_logged > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.1)', color: member.total_logged > 0 ? '#059669' : t.textMuted }}>
+          {member.total_logged.toFixed(1)}h logged
+        </span>
+      </div>
+
+      {/* task table */}
+      {member.tasks.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr>
+              {['Task', 'Title', 'Sprint', 'Est. Hours', 'Logged', 'Progress', 'Status'].map((h) => (
+                <th key={h} className="px-4 py-2 text-left font-semibold"
+                  style={{ color: t.textMuted, borderBottom: t.border, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {member.tasks.map((task) => {
+              const pct = task.est_hours && task.est_hours > 0
+                ? Math.min(100, Math.round((task.logged_hours / task.est_hours) * 100)) : 0;
+              const barC = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f59e0b' : '#10b981';
+              return (
+                <tr key={task.key} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
+                  <td className="px-4 py-2.5">
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold"
+                      style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                      {task.key}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 max-w-[260px]" style={{ color: t.text }}>
+                    <span className="line-clamp-1" title={task.title}>{task.title}</span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {task.is_active_sprint ? (
+                      <span className="px-2 py-0.5 rounded text-xs font-semibold"
+                        style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>Active</span>
+                    ) : (
+                      <span style={{ color: t.textSubtle }}>Backlog</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono" style={{ color: t.textMuted }}>
+                    {task.est_hours != null ? `${task.est_hours}h` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono font-semibold"
+                    style={{ color: task.logged_hours > 0 ? t.text : t.textSubtle }}>
+                    {task.logged_hours > 0 ? `${task.logged_hours}h` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {task.est_hours != null ? (
+                      <div className="flex items-center gap-1.5 min-w-[80px]">
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barC }} />
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: barC }}>{pct}%</span>
+                      </div>
+                    ) : <span style={{ color: t.textSubtle }}>—</span>}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="px-2 py-0.5 rounded text-xs"
+                      style={{
+                        background: task.status === 'In Progress' ? 'rgba(59,130,246,0.12)' : task.status === 'Done' ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                        color: task.status === 'In Progress' ? '#3b82f6' : task.status === 'Done' ? '#059669' : t.textMuted,
+                      }}>
+                      {task.status}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ── Project / Epic dashboard panel ────────────────────────────────────────────
+function ProjectView({
+  token, startDate, endDate, preset,
+}: {
+  token: string; startDate: string; endDate: string; preset: Preset;
+}) {
+  const [epics,       setEpics]       = useState<EpicStat[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [sprintOnly,  setSprintOnly]  = useState(false);
+  const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
+
+  const fetchEpics = useCallback(async () => {
+    setLoading(true);
+    setExpanded(new Set());
+    try {
+      const url = `${API}/jira/epic-dashboard?start_date=${startDate}&end_date=${endDate}&sprint_only=${sprintOnly}`;
+      const res = await fetch(url, { headers: aH(token) });
+      if (res.ok) setEpics((await res.json()).epics ?? []);
+    } catch (ex) { console.error(ex); }
+    finally { setLoading(false); }
+  }, [token, startDate, endDate, sprintOnly]);
+
+  useEffect(() => { fetchEpics(); }, [fetchEpics]);
+
+  const toggleExpand = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  const totalLogged = epics
+    .filter((e) => e.epic_key !== 'GENERAL')
+    .reduce((s, e) => s + Number(e.total_logged_hours || 0), 0);
+  const totalEst = epics
+    .filter((e) => e.total_est_hours != null)
+    .reduce((s, e) => s + Number(e.total_est_hours || 0), 0);
+  const overallPct = totalEst > 0 ? Math.round((totalLogged / totalEst) * 100) : 0;
+
+  const fmtDate = (d: string) =>
+    new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div className="space-y-6">
+      {/* controls row */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <p className="text-sm" style={{ color: t.textSubtle }}>
+          {fmtDate(startDate)} – {fmtDate(endDate)}
+        </p>
+        <button
+          onClick={() => setSprintOnly((v) => !v)}
+          className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+          style={sprintOnly
+            ? { background: 'rgba(16,185,129,0.18)', color: '#059669', border: '1px solid #059669' }
+            : { border: t.border, color: t.textMuted, background: 'transparent' }}>
+          {sprintOnly ? 'Sprint Only' : 'All Tasks'}
+        </button>
+        <button onClick={fetchEpics}
+          className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+          style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
+          Refresh
+        </button>
+      </div>
+
+      {/* summary cards */}
+      <div className="grid grid-cols-3 gap-5">
+        {[
+          { title: 'Active Epics / Projects', value: epics.filter((e) => e.epic_key !== 'GENERAL').length, color: 'rgba(59,130,246,0.15)' },
+          { title: 'Total Hours Logged',       value: `${totalLogged.toFixed(1)}h`,                        color: 'rgba(139,92,246,0.15)' },
+          { title: 'Overall Progress',         value: `${overallPct}%`,                                    color: 'rgba(16,185,129,0.15)' },
+        ].map((s) => (
+          <div key={s.title} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
+            <p className="text-sm font-medium mb-2" style={{ color: t.textMuted }}>{s.title}</p>
+            <p className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* epic table */}
+      {loading ? (
+        <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+          Loading project data…
+        </div>
+      ) : epics.length === 0 ? (
+        <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+          No epics found.
+        </div>
+      ) : (
+        <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
+          <div className="px-6 py-3 flex items-center gap-2" style={{ borderBottom: t.border, background: t.tableHead }}>
+            <h4 className="text-sm font-bold uppercase tracking-wider" style={{ color: t.textHeader }}>
+              Project (Epic) Breakdown
+            </h4>
+            <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+              style={{ background: 'rgba(100,116,139,0.15)', color: t.textMuted }}>
+              {epics.length}
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead style={{ background: t.tableHead }}>
+              <tr>
+                <th className="w-8 px-4 py-3" />
+                {['Project / Epic', 'Tasks', 'Est. Hours', 'Logged Hours', 'Progress', 'Members'].map((h) => (
+                  <th key={h} className="px-5 py-3 text-left font-semibold"
+                    style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {epics.map((epic) => (
+                <EpicRow
+                  key={epic.epic_key}
+                  epic={epic}
+                  isOpen={expanded.has(epic.epic_key)}
+                  onToggle={() => toggleExpand(epic.epic_key)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
+type Tab = 'resource' | 'project';
+
 export default function ReportsPage() {
   const token  = useAuthStore((s) => s.token) ?? '';
   const user   = useAuthStore((s) => s.user);
   const router = useRouter();
 
+  const [activeTab,  setActiveTab]  = useState<Tab>('resource');
   const [preset,    setPreset]    = useState<Preset>('week');
   const [startDate, setStartDate] = useState(getWeekRange().start);
   const [endDate,   setEndDate]   = useState(getWeekRange().end);
@@ -420,16 +785,34 @@ export default function ReportsPage() {
           <h2 className="text-xl font-semibold" style={{ color: t.text }}>Analytics</h2>
           <p className="text-sm" style={{ color: t.textMuted }}>{roleLabel} — timesheet insights</p>
         </div>
-        <div className="flex items-center gap-2">
-          {(['week', 'month', 'custom'] as Preset[]).map((p) => (
-            <button key={p} onClick={() => applyPreset(p)}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
-              style={preset === p
-                ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
-                : { border: t.border, color: t.textMuted, background: 'transparent' }}>
-              {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Custom'}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          {/* tab switcher — admin only */}
+          {user?.role === 'admin' && (
+            <div className="flex rounded-lg overflow-hidden" style={{ border: t.border }}>
+              {([['resource', 'Resource View'], ['project', 'Project View']] as [Tab, string][]).map(([tab, label]) => (
+                <button key={tab} onClick={() => setActiveTab(tab)}
+                  className="px-4 py-2 text-sm font-medium transition-all"
+                  style={activeTab === tab
+                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                    : { background: 'transparent', color: t.textMuted }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* preset buttons */}
+          <div className="flex items-center gap-2">
+            {(['week', 'month', 'custom'] as Preset[]).map((p) => (
+              <button key={p} onClick={() => applyPreset(p)}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
+                style={preset === p
+                  ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                  : { border: t.border, color: t.textMuted, background: 'transparent' }}>
+                {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Custom'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -452,60 +835,67 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {/* ── Date range label ── */}
-        <p className="text-sm" style={{ color: t.textSubtle }}>
-          {fmtDate(startDate)} – {fmtDate(endDate)}
-          <span className="ml-2 px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>
-            {workingDays} working day{workingDays !== 1 ? 's' : ''} · {targetHours}h target
-          </span>
-        </p>
-
-        {/* ── Summary stats ── */}
-        <div className="grid grid-cols-4 gap-5">
-          {[
-            { title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, icon: '🕐', color: 'rgba(59,130,246,0.15)' },
-            { title: 'Total Entries',      value: totalEntries,                         icon: '📝', color: 'rgba(139,92,246,0.15)' },
-            { title: 'Pending Approval',   value: totalPending,                         icon: '⏳', color: 'rgba(245,158,11,0.15)' },
-            { title: 'Approved',           value: totalApproved,                        icon: '✅', color: 'rgba(16,185,129,0.15)' },
-          ].map((s) => (
-            <div key={s.title} className="rounded-xl p-5 shadow-sm"
-              style={{ background: t.statGrad, border: t.border }}>
-              <div className="flex items-start justify-between mb-3">
-                <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
-                <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
-                  style={{ background: s.color }}>{s.icon}</span>
-              </div>
-              <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Resource breakdown by role ── */}
-        {loading ? (
-          <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
-            Loading analytics…
-          </div>
-        ) : stats.length === 0 ? (
-          <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
-            No data for this period.
-          </div>
+        {/* ── Project View ── */}
+        {activeTab === 'project' ? (
+          <ProjectView token={token} startDate={startDate} endDate={endDate} preset={preset} />
         ) : (
           <>
-            <ResourceSection
-              title="Admins" rows={admins} expanded={expanded}
-              targetHours={targetHours} startDate={startDate} endDate={endDate}
-              token={token} onToggle={toggleExpand}
-            />
-            <ResourceSection
-              title="Teamleads" rows={teamleads} expanded={expanded}
-              targetHours={targetHours} startDate={startDate} endDate={endDate}
-              token={token} onToggle={toggleExpand}
-            />
-            <ResourceSection
-              title="Resources" rows={resources} expanded={expanded}
-              targetHours={targetHours} startDate={startDate} endDate={endDate}
-              token={token} onToggle={toggleExpand}
-            />
+            {/* ── Date range label ── */}
+            <p className="text-sm" style={{ color: t.textSubtle }}>
+              {fmtDate(startDate)} – {fmtDate(endDate)}
+              <span className="ml-2 px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>
+                {workingDays} working day{workingDays !== 1 ? 's' : ''} · {targetHours}h target
+              </span>
+            </p>
+
+            {/* ── Summary stats ── */}
+            <div className="grid grid-cols-4 gap-5">
+              {[
+                { title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, icon: '🕐', color: 'rgba(59,130,246,0.15)' },
+                { title: 'Total Entries',      value: totalEntries,                         icon: '📝', color: 'rgba(139,92,246,0.15)' },
+                { title: 'Pending Approval',   value: totalPending,                         icon: '⏳', color: 'rgba(245,158,11,0.15)' },
+                { title: 'Approved',           value: totalApproved,                        icon: '✅', color: 'rgba(16,185,129,0.15)' },
+              ].map((s) => (
+                <div key={s.title} className="rounded-xl p-5 shadow-sm"
+                  style={{ background: t.statGrad, border: t.border }}>
+                  <div className="flex items-start justify-between mb-3">
+                    <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
+                    <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
+                      style={{ background: s.color }}>{s.icon}</span>
+                  </div>
+                  <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Resource breakdown by role ── */}
+            {loading ? (
+              <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+                Loading analytics…
+              </div>
+            ) : stats.length === 0 ? (
+              <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+                No data for this period.
+              </div>
+            ) : (
+              <>
+                <ResourceSection
+                  title="Admins" rows={admins} expanded={expanded}
+                  targetHours={targetHours} startDate={startDate} endDate={endDate}
+                  token={token} onToggle={toggleExpand}
+                />
+                <ResourceSection
+                  title="Teamleads" rows={teamleads} expanded={expanded}
+                  targetHours={targetHours} startDate={startDate} endDate={endDate}
+                  token={token} onToggle={toggleExpand}
+                />
+                <ResourceSection
+                  title="Resources" rows={resources} expanded={expanded}
+                  targetHours={targetHours} startDate={startDate} endDate={endDate}
+                  token={token} onToggle={toggleExpand}
+                />
+              </>
+            )}
           </>
         )}
 
