@@ -279,16 +279,19 @@ def get_analytics_for_manager(manager_id: str, start_date: str, end_date: str) -
     placeholders = ','.join(['%s'] * len(subordinate_ids))
     query = f"""
         SELECT u.user_id, u.full_name, u.email, u.avatar, u.role,
+               u.manager_id,
+               m.full_name AS manager_name,
                COALESCE(SUM(te.hours), 0)   AS total_hours,
                COUNT(te.id)                  AS total_entries,
                COUNT(CASE WHEN te.status = 'pending'  THEN 1 END) AS pending_count,
                COUNT(CASE WHEN te.status = 'approved' THEN 1 END) AS approved_count
         FROM users u
+        LEFT JOIN users m ON m.user_id = u.manager_id
         LEFT JOIN timesheet_entries te
           ON te.user_id = u.user_id
           AND te.entry_date BETWEEN %s AND %s
         WHERE u.user_id IN ({placeholders})
-        GROUP BY u.user_id, u.full_name, u.email, u.avatar, u.role
+        GROUP BY u.user_id, u.full_name, u.email, u.avatar, u.role, u.manager_id, m.full_name
         ORDER BY u.full_name
     """
     return execute_query(query, (start_date, end_date) + tuple(subordinate_ids), fetch_all=True) or []
@@ -327,21 +330,25 @@ def get_task_total_logged(user_id: str, task_id: str) -> float:
 
 
 def get_analytics_for_all_resources(start_date: str, end_date: str) -> list:
-    """Admin: hours + entry count per every non-admin user in date range."""
+    """Admin: hours + entry count per ALL active users in date range (including admins)."""
     query = """
         SELECT u.user_id, u.full_name, u.email, u.avatar, u.role,
+               u.manager_id,
+               m.full_name AS manager_name,
                COALESCE(SUM(te.hours), 0)                                AS total_hours,
                COUNT(te.id)                                               AS total_entries,
                COUNT(CASE WHEN te.status = 'pending'  THEN 1 END)        AS pending_count,
                COUNT(CASE WHEN te.status = 'approved' THEN 1 END)        AS approved_count
         FROM users u
+        LEFT JOIN users m ON m.user_id = u.manager_id
         LEFT JOIN timesheet_entries te
           ON te.user_id = u.user_id
           AND te.entry_date BETWEEN %s AND %s
         WHERE u.is_active = true
-          AND u.role != 'admin'
-        GROUP BY u.user_id, u.full_name, u.email, u.avatar, u.role
-        ORDER BY u.full_name
+        GROUP BY u.user_id, u.full_name, u.email, u.avatar, u.role, u.manager_id, m.full_name
+        ORDER BY
+            CASE u.role WHEN 'admin' THEN 0 WHEN 'teamlead' THEN 1 ELSE 2 END,
+            u.full_name
     """
     return execute_query(query, (start_date, end_date), fetch_all=True) or []
 

@@ -216,7 +216,7 @@ export default function AllEntriesPage() {
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
-    if (!allEntriesFetchedAt) fetchAll();
+    fetchAll(); // always fetch fresh — statuses change when manager approves/rejects
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── date-range filter (client-side) ──────────────────────────────────────
@@ -252,7 +252,7 @@ export default function AllEntriesPage() {
       updateAllEntry(resubmitEntry.id, {
         hours: parseFloat(resubmitHours),
         work_description: resubmitWork,
-        status: 'resubmitted',
+        status: 'pending',
         rejection_reason: null,
       });
       setResubmitEntry(null);

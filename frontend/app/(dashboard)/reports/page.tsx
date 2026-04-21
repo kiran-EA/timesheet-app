@@ -13,6 +13,8 @@ interface ResourceStat {
   email: string;
   avatar: string;
   role: string;
+  manager_id: string | null;
+  manager_name: string | null;
   total_hours: number;
   total_entries: number;
   pending_count: number;
@@ -47,6 +49,19 @@ function getMonthRange() {
   const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
   const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
   return { start, end };
+}
+
+/** Count Mon–Fri days between two ISO date strings (inclusive). */
+function countWorkingDays(start: string, end: string): number {
+  let count = 0;
+  const cur = new Date(start + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  while (cur <= endD) {
+    const d = cur.getDay();
+    if (d !== 0 && d !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(count, 1);
 }
 
 type Preset = 'week' | 'month' | 'custom';
@@ -152,6 +167,174 @@ function TaskBreakdown({
   );
 }
 
+// ── role badge ─────────────────────────────────────────────────────────────────
+function RoleBadge({ role }: { role: string }) {
+  const styles: Record<string, { bg: string; color: string }> = {
+    admin:    { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' },
+    teamlead: { bg: 'rgba(139,92,246,0.12)', color: '#7c3aed' },
+    resource: { bg: 'rgba(16,185,129,0.12)', color: '#059669' },
+  };
+  const s = styles[role] ?? { bg: 'rgba(100,116,139,0.12)', color: '#64748b' };
+  return (
+    <span className="px-2.5 py-1 rounded-full text-xs font-semibold capitalize"
+      style={{ background: s.bg, color: s.color }}>
+      {role === 'teamlead' ? 'Teamlead' : role.charAt(0).toUpperCase() + role.slice(1)}
+    </span>
+  );
+}
+
+// ── resource table section (by role group) ─────────────────────────────────────
+function ResourceSection({
+  title, rows, expanded, targetHours, startDate, endDate, token, onToggle,
+}: {
+  title: string;
+  rows: ResourceStat[];
+  expanded: Set<string>;
+  targetHours: number;
+  startDate: string;
+  endDate: string;
+  token: string;
+  onToggle: (uid: string) => void;
+}) {
+  if (rows.length === 0) return null;
+
+  const sectionHours = rows.reduce((s, r) => s + Number(r.total_hours || 0), 0);
+
+  return (
+    <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
+      {/* section header */}
+      <div className="px-6 py-3 flex items-center gap-2" style={{ borderBottom: t.border, background: t.tableHead }}>
+        <h4 className="text-sm font-bold uppercase tracking-wider" style={{ color: t.textHeader }}>{title}</h4>
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+          style={{ background: 'rgba(100,116,139,0.15)', color: t.textMuted }}>
+          {rows.length}
+        </span>
+        <span className="ml-auto text-xs font-semibold" style={{ color: t.textMuted }}>
+          {sectionHours.toFixed(1)}h total
+        </span>
+      </div>
+
+      <table className="w-full text-sm">
+        <thead style={{ background: t.tableHead }}>
+          <tr>
+            <th className="w-8 px-4 py-3" />
+            {['Member', 'Role', 'Hours Logged', 'Progress', 'Entries', 'Pending', 'Approved'].map((h) => (
+              <th key={h} className="px-5 py-3 text-left font-semibold"
+                style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const hours    = Number(r.total_hours   || 0);
+            const entries  = Number(r.total_entries || 0);
+            const pending  = Number(r.pending_count || 0);
+            const approved = Number(r.approved_count || 0);
+            const pct      = Math.min(100, Math.round((hours / targetHours) * 100));
+            const barColor = pct >= 100 ? '#10b981' : pct >= 75 ? '#3b82f6' : pct >= 40 ? '#f59e0b' : '#ef4444';
+            const isOpen   = expanded.has(r.user_id);
+
+            return (
+              <>
+                <tr key={r.user_id}
+                  onClick={() => onToggle(r.user_id)}
+                  className="cursor-pointer transition-colors"
+                  style={{
+                    borderBottom: isOpen ? 'none' : t.border,
+                    background: isOpen ? `${t.cardBg2}` : 'transparent',
+                  }}
+                  onMouseEnter={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = `${t.tableHead}`; }}
+                  onMouseLeave={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+
+                  {/* expand chevron */}
+                  <td className="px-4 py-4 text-center" style={{ color: t.textMuted }}>
+                    <svg className="w-4 h-4 inline transition-transform"
+                      style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </td>
+
+                  {/* member + manager */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+                        {r.avatar || r.full_name[0]}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm" style={{ color: t.text }}>{r.full_name}</p>
+                        <p className="text-xs" style={{ color: t.textSubtle }}>{r.email}</p>
+                        {r.manager_name && (
+                          <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
+                            → {r.manager_name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* role */}
+                  <td className="px-5 py-4">
+                    <RoleBadge role={r.role} />
+                  </td>
+
+                  {/* hours */}
+                  <td className="px-5 py-4 font-mono font-bold" style={{ color: t.text }}>
+                    {hours.toFixed(1)}h
+                  </td>
+
+                  {/* progress bar — 100% = targetHours (8h × working days) */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2 min-w-[130px]">
+                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
+                        <div className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, background: barColor }} />
+                      </div>
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: barColor, minWidth: 36 }}>
+                        {pct}%
+                      </span>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: t.textSubtle }}>
+                      of {targetHours}h target
+                    </p>
+                  </td>
+
+                  {/* entries */}
+                  <td className="px-5 py-4 text-center font-semibold" style={{ color: t.text }}>
+                    {entries}
+                  </td>
+
+                  {/* pending */}
+                  <td className="px-5 py-4 text-center">
+                    <StatusPill count={pending} color="#d97706" bg="rgba(245,158,11,0.12)" />
+                  </td>
+
+                  {/* approved */}
+                  <td className="px-5 py-4 text-center">
+                    <StatusPill count={approved} color="#059669" bg="rgba(16,185,129,0.12)" />
+                  </td>
+                </tr>
+
+                {isOpen && (
+                  <TaskBreakdown
+                    userId={r.user_id}
+                    startDate={startDate}
+                    endDate={endDate}
+                    token={token}
+                  />
+                )}
+              </>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const token  = useAuthStore((s) => s.token) ?? '';
@@ -200,14 +383,22 @@ export default function ReportsPage() {
     });
   };
 
+  // 8h × working days in selected range = 100% target
+  const workingDays  = countWorkingDays(startDate, endDate);
+  const targetHours  = workingDays * 8;
+
+  // group by role
+  const admins    = stats.filter((r) => r.role === 'admin');
+  const teamleads = stats.filter((r) => r.role === 'teamlead');
+  const resources = stats.filter((r) => r.role === 'resource');
+
   // summary totals
   const totalHours    = stats.reduce((s, r) => s + Number(r.total_hours   || 0), 0);
   const totalEntries  = stats.reduce((s, r) => s + Number(r.total_entries || 0), 0);
   const totalPending  = stats.reduce((s, r) => s + Number(r.pending_count || 0), 0);
   const totalApproved = stats.reduce((s, r) => s + Number(r.approved_count || 0), 0);
-  const maxHours      = Math.max(...stats.map((r) => Number(r.total_hours || 0)), 1);
 
-  const roleLabel = user?.role === 'admin' ? 'All Resources' : 'Your Team';
+  const roleLabel = user?.role === 'admin' ? 'All Users' : 'Your Team';
 
   const fmtDate = (d: string) =>
     new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -257,6 +448,9 @@ export default function ReportsPage() {
         {/* ── Date range label ── */}
         <p className="text-sm" style={{ color: t.textSubtle }}>
           {fmtDate(startDate)} – {fmtDate(endDate)}
+          <span className="ml-2 px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>
+            {workingDays} working day{workingDays !== 1 ? 's' : ''} · {targetHours}h target
+          </span>
         </p>
 
         {/* ── Summary stats ── */}
@@ -279,163 +473,34 @@ export default function ReportsPage() {
           ))}
         </div>
 
-        {/* ── Resource breakdown table ── */}
-        <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
-          <div className="px-6 py-4" style={{ borderBottom: t.border }}>
-            <h3 className="font-semibold" style={{ color: t.text }}>
-              Resource Breakdown
-              <span className="ml-2 text-sm font-normal" style={{ color: t.textMuted }}>
-                ({stats.length} member{stats.length !== 1 ? 's' : ''})
-              </span>
-            </h3>
-            <p className="text-xs mt-0.5" style={{ color: t.textSubtle }}>
-              Click a row to expand task-level detail
-            </p>
+        {/* ── Resource breakdown by role ── */}
+        {loading ? (
+          <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+            Loading analytics…
           </div>
-
-          {loading ? (
-            <div className="text-center py-16" style={{ color: t.textSubtle }}>Loading analytics…</div>
-          ) : stats.length === 0 ? (
-            <div className="text-center py-16" style={{ color: t.textSubtle }}>No data for this period.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead style={{ background: t.tableHead }}>
-                <tr>
-                  <th className="w-8 px-4 py-3" />
-                  {['Member', 'Role', 'Hours Logged', 'Progress', 'Entries', 'Pending', 'Approved'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left font-semibold"
-                      style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {stats.map((r) => {
-                  const hours    = Number(r.total_hours   || 0);
-                  const entries  = Number(r.total_entries || 0);
-                  const pending  = Number(r.pending_count || 0);
-                  const approved = Number(r.approved_count || 0);
-                  const pct      = Math.min(100, Math.round((hours / maxHours) * 100));
-                  const barColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b';
-                  const isOpen   = expanded.has(r.user_id);
-
-                  return (
-                    <>
-                      {/* resource row */}
-                      <tr key={r.user_id}
-                        onClick={() => toggleExpand(r.user_id)}
-                        className="cursor-pointer transition-colors"
-                        style={{
-                          borderBottom: isOpen ? 'none' : t.border,
-                          background: isOpen ? `${t.cardBg2}` : 'transparent',
-                        }}
-                        onMouseEnter={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = `${t.tableHead}`; }}
-                        onMouseLeave={(e) => { if (!isOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-
-                        {/* expand chevron */}
-                        <td className="px-4 py-4 text-center" style={{ color: t.textMuted }}>
-                          <svg className="w-4 h-4 inline transition-transform"
-                            style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="9 18 15 12 9 6" />
-                          </svg>
-                        </td>
-
-                        {/* member */}
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                              style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
-                              {r.avatar || r.full_name[0]}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-sm" style={{ color: t.text }}>{r.full_name}</p>
-                              <p className="text-xs" style={{ color: t.textSubtle }}>{r.email}</p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* role */}
-                        <td className="px-5 py-4">
-                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold capitalize"
-                            style={{
-                              background: r.role === 'teamlead' ? 'rgba(139,92,246,0.12)' : 'rgba(59,130,246,0.12)',
-                              color:      r.role === 'teamlead' ? '#7c3aed' : '#3b82f6',
-                            }}>
-                            {r.role}
-                          </span>
-                        </td>
-
-                        {/* hours */}
-                        <td className="px-5 py-4 font-mono font-bold" style={{ color: t.text }}>
-                          {hours.toFixed(1)}h
-                        </td>
-
-                        {/* progress */}
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2 min-w-[120px]">
-                            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
-                              <div className="h-full rounded-full transition-all"
-                                style={{ width: `${pct}%`, background: barColor }} />
-                            </div>
-                            <span className="text-xs font-semibold tabular-nums" style={{ color: barColor, minWidth: 32 }}>
-                              {pct}%
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* entries */}
-                        <td className="px-5 py-4 text-center font-semibold" style={{ color: t.text }}>
-                          {entries}
-                        </td>
-
-                        {/* pending */}
-                        <td className="px-5 py-4 text-center">
-                          <StatusPill count={pending} color="#d97706" bg="rgba(245,158,11,0.12)" />
-                        </td>
-
-                        {/* approved */}
-                        <td className="px-5 py-4 text-center">
-                          <StatusPill count={approved} color="#059669" bg="rgba(16,185,129,0.12)" />
-                        </td>
-                      </tr>
-
-                      {/* task drill-down */}
-                      {isOpen && (
-                        <TaskBreakdown
-                          userId={r.user_id}
-                          startDate={startDate}
-                          endDate={endDate}
-                          token={token}
-                        />
-                      )}
-                    </>
-                  );
-                })}
-              </tbody>
-
-              {/* totals row */}
-              {stats.length > 1 && (
-                <tfoot>
-                  <tr style={{ background: t.tableHead }}>
-                    <td className="px-4 py-3" />
-                    <td className="px-5 py-3 font-bold text-sm" style={{ color: t.text }} colSpan={2}>
-                      Total
-                    </td>
-                    <td className="px-5 py-3 font-mono font-bold" style={{ color: t.text }}>
-                      {totalHours.toFixed(1)}h
-                    </td>
-                    <td className="px-5 py-3" />
-                    <td className="px-5 py-3 text-center font-bold" style={{ color: t.text }}>{totalEntries}</td>
-                    <td className="px-5 py-3 text-center font-bold" style={{ color: '#d97706' }}>{totalPending || '—'}</td>
-                    <td className="px-5 py-3 text-center font-bold" style={{ color: '#059669' }}>{totalApproved || '—'}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          )}
-        </div>
+        ) : stats.length === 0 ? (
+          <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
+            No data for this period.
+          </div>
+        ) : (
+          <>
+            <ResourceSection
+              title="Admins" rows={admins} expanded={expanded}
+              targetHours={targetHours} startDate={startDate} endDate={endDate}
+              token={token} onToggle={toggleExpand}
+            />
+            <ResourceSection
+              title="Teamleads" rows={teamleads} expanded={expanded}
+              targetHours={targetHours} startDate={startDate} endDate={endDate}
+              token={token} onToggle={toggleExpand}
+            />
+            <ResourceSection
+              title="Resources" rows={resources} expanded={expanded}
+              targetHours={targetHours} startDate={startDate} endDate={endDate}
+              token={token} onToggle={toggleExpand}
+            />
+          </>
+        )}
 
       </div>
     </div>
