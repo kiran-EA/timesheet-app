@@ -176,7 +176,7 @@ class JiraService:
                     "key":              issue["key"],
                     "title":            summary,
                     "epic":             epic_key,
-                    "epic_name":        epic_name,
+                    "epic_name":        epic_name,  # may be None if parent.fields.summary absent
                     "story_points":     sp,
                     "est_hours":        est_hours,
                     "logged_hours":     0,
@@ -185,6 +185,15 @@ class JiraService:
                     "is_active_sprint": False,  # filled in by the API
                     "assignee":         assignee_name,
                 })
+
+            # Batch-fetch epic names for any task whose name wasn't in the parent field
+            missing_keys = list({t["epic"] for t in tasks if t["epic"] and not t["epic_name"]})
+            if missing_keys:
+                name_map = self.fetch_epic_names(missing_keys)
+                for task in tasks:
+                    if task["epic"] and not task["epic_name"]:
+                        task["epic_name"] = name_map.get(task["epic"])
+
             return tasks
         except Exception as e:
             print(f"Jira get_user_tasks error: {e}")
@@ -260,10 +269,38 @@ class JiraService:
                     "is_active_sprint": False,
                     "assignee":         assignee_name,
                 })
+
+            # Batch-fetch epic names for any task whose name wasn't in the parent field
+            missing_keys = list({t["epic"] for t in tasks if t["epic"] and not t["epic_name"]})
+            if missing_keys:
+                name_map = self.fetch_epic_names(missing_keys)
+                for task in tasks:
+                    if task["epic"] and not task["epic_name"]:
+                        task["epic_name"] = name_map.get(task["epic"])
+
             return tasks
         except Exception as e:
             print(f"Jira get_all_project_tasks error: {e}")
             return []
+
+    def fetch_epic_names(self, epic_keys: list) -> dict:
+        """Batch-fetch summaries for a list of epic keys. Returns {key: title}."""
+        if not epic_keys:
+            return {}
+        try:
+            jql = f'issueKey in ({", ".join(epic_keys)})'
+            r = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"jql": jql, "maxResults": len(epic_keys), "fields": ["summary"]},
+                timeout=10,
+            )
+            if r.ok:
+                return {i["key"]: i["fields"].get("summary", "") for i in r.json().get("issues", [])}
+        except Exception as e:
+            print(f"fetch_epic_names error: {e}")
+        return {}
 
     def get_all_sprint_keys(self) -> set:
         """Return set of issue keys that are currently in an active sprint (project-wide)."""
