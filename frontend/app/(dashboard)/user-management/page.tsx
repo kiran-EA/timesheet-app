@@ -36,6 +36,137 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+// ── Add User modal ────────────────────────────────────────────────────────────
+function AddUserModal({
+  allUsers, token, onClose, onSaved,
+}: {
+  allUsers: User[]; token: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [fullName,  setFullName]  = useState('');
+  const [email,     setEmail]     = useState('');
+  const [role,      setRole]      = useState<'resource' | 'teamlead' | 'admin'>('resource');
+  const [managerId, setManagerId] = useState('');
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState('');
+
+  const potentialManagers = allUsers.filter(
+    (u) => u.role === 'teamlead' || u.role === 'admin',
+  );
+
+  const handleSave = async () => {
+    if (!fullName.trim()) { setError('Full name is required'); return; }
+    if (!email.trim())    { setError('Email is required'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await fetch(`${API}/users`, {
+        method: 'POST', headers: authHeaders(token),
+        body: JSON.stringify({
+          full_name: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          role,
+          manager_id: managerId || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.detail ?? `Failed (${res.status})`);
+        return;
+      }
+      onSaved();
+    } catch (e: unknown) {
+      setError(`Network error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+      <div className="w-full max-w-md rounded-2xl shadow-xl flex flex-col"
+        style={{ background: t.cardBg, border: t.border }}>
+
+        {/* header */}
+        <div className="flex items-center justify-between p-6" style={{ borderBottom: t.border }}>
+          <h3 className="font-semibold text-lg" style={{ color: t.text }}>Add New User</h3>
+          <button onClick={onClose} style={{ color: t.textSubtle }}>
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Full Name */}
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Full Name</label>
+            <input type="text" placeholder="e.g. Priya Sharma" value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Email</label>
+            <input type="email" placeholder="e.g. priya@expressanalytics.net" value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+          </div>
+
+          {/* Role */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: t.textMuted }}>Role</label>
+            <div className="flex gap-2">
+              {(['resource', 'teamlead', 'admin'] as const).map((r) => (
+                <button key={r} onClick={() => setRole(r)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold capitalize transition-all"
+                  style={role === r
+                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                    : { border: t.border, color: t.textMuted, background: 'transparent' }}>
+                  {r === 'teamlead' ? 'Teamlead' : r.charAt(0).toUpperCase() + r.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Reports To (not for admin) */}
+          {role !== 'admin' && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Reports To</label>
+              <select value={managerId} onChange={(e) => setManagerId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none"
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }}>
+                <option value="">— No manager (auto-approved) —</option>
+                {potentialManagers.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>{m.full_name} ({m.role})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs px-3 py-2 rounded"
+              style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626' }}>{error}</p>
+          )}
+        </div>
+
+        <div className="flex gap-3 p-6" style={{ borderTop: t.border }}>
+          <button onClick={onClose} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
+            style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+            {saving ? 'Creating…' : 'Create User'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Configure modal ───────────────────────────────────────────────────────────
 function ConfigureModal({
   user, allUsers, token, onClose, onSaved,
@@ -383,10 +514,11 @@ export default function UserManagementPage() {
   const token = useAuthStore((s) => s.token) ?? '';
   const me    = useAuthStore((s) => s.user);
 
-  const [users,   setUsers]   = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search,  setSearch]  = useState('');
-  const [editing, setEditing] = useState<User | null>(null);
+  const [users,       setUsers]       = useState<User[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState('');
+  const [editing,     setEditing]     = useState<User | null>(null);
+  const [addingUser,  setAddingUser]  = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -436,15 +568,25 @@ export default function UserManagementPage() {
           <h2 className="text-xl font-semibold" style={{ color: t.text }}>User Management</h2>
           <p className="text-sm" style={{ color: t.textMuted }}>Configure roles, managers and team assignments</p>
         </div>
-        <div className="relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: t.textSubtle }}
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input type="text" placeholder="Search name or email…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none w-64"
-            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: t.textSubtle }}
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" placeholder="Search name or email…"
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none w-64"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+          </div>
+          <button onClick={() => setAddingUser(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add User
+          </button>
         </div>
       </div>
 
@@ -489,6 +631,14 @@ export default function UserManagementPage() {
           user={editing} allUsers={users} token={token}
           onClose={() => setEditing(null)}
           onSaved={async () => { setEditing(null); await fetchUsers(); }}
+        />
+      )}
+
+      {addingUser && (
+        <AddUserModal
+          allUsers={users} token={token}
+          onClose={() => setAddingUser(false)}
+          onSaved={async () => { setAddingUser(false); await fetchUsers(); }}
         />
       )}
     </div>

@@ -45,10 +45,12 @@ async def add_entry(body: TimesheetEntryCreate, current_user: dict = Depends(get
     # Admin can log on behalf of another user via target_user_id
     if body.target_user_id and role == "admin":
         user_id = body.target_user_id
-        initial_status = "approved"   # admin-created entries are auto-approved
+        initial_status = "approved"   # admin logging on behalf of someone → auto-approved
     else:
         user_id = current_user["sub"]
-        initial_status = "approved" if role == "admin" else "pending"
+        user_record = queries.get_user_by_id(user_id)
+        has_manager = bool(user_record and user_record.get("manager_id"))
+        initial_status = "pending" if has_manager else "approved"
 
     # Non-admin: enforce 3-working-day lookback restriction
     if role != "admin":
@@ -83,35 +85,33 @@ class EditEntryBody(BaseModel):
     for_user_id: Optional[str] = None
 
 
-@router.patch("/entries/{entry_id}", response_model=TimesheetEntryResponse)
-async def edit_entry(entry_id: str, body: EditEntryBody, current_user: dict = Depends(get_current_user)):
-    """Edit work_description and hours of an existing entry.
-    Admin can edit any entry (any status). Resource/teamlead can only edit pending/resubmitted."""
-    role = current_user.get("role", "resource")
-    if body.for_user_id and role == "admin":
-        row = queries.edit_entry_admin(entry_id, body.work_description, body.hours)
-    elif role == "admin":
-        row = queries.edit_entry_admin(entry_id, body.work_description, body.hours)
-    else:
-        row = queries.edit_entry(entry_id, current_user["sub"], body.work_description, body.hours)
-    if not row:
-        raise HTTPException(status_code=404, detail="Entry not found or cannot be edited")
-    return dict(row)
-
-
 class ResubmitBody(BaseModel):
     work_description: Optional[str] = None
     hours: Optional[float] = None
     task_id: Optional[str] = None
     task_title: Optional[str] = None
+    for_user_id: Optional[str] = None
+    is_resubmit: bool = False   # True = change status to resubmitted; False = keep status
 
 
 @router.put("/entries/{entry_id}/resubmit")
 async def resubmit_entry(entry_id: str, body: ResubmitBody, current_user: dict = Depends(get_current_user)):
-    """Resource edits a rejected entry and resubmits it."""
-    user_id = current_user["sub"]
-    queries.resubmit_entry(entry_id, user_id, body.work_description, body.hours, body.task_id, body.task_title)
-    return {"status": "resubmitted"}
+    """Edit work_description and hours.
+    is_resubmit=True  → status → resubmitted (for rejected entries)
+    is_resubmit=False → keep status unchanged (for pending/resubmitted edits)
+    Admin can edit any entry regardless of status."""
+    role = current_user.get("role", "resource")
+
+    if role == "admin":
+        queries.edit_entry_admin(entry_id, body.work_description, body.hours)
+    else:
+        user_id = current_user["sub"]
+        if body.is_resubmit:
+            queries.resubmit_entry(entry_id, user_id, body.work_description, body.hours, body.task_id, body.task_title)
+        else:
+            queries.edit_entry(entry_id, user_id, body.work_description, body.hours)
+
+    return {"status": "ok"}
 
 
 @router.delete("/entries/{entry_id}", status_code=204)

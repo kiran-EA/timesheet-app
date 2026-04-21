@@ -36,6 +36,32 @@ async def get_subordinates(current_user: dict = Depends(get_current_user)):
     return {"subordinates": [dict(s) for s in subs]}
 
 
+class CreateUserBody(BaseModel):
+    email: str
+    full_name: str
+    role: str = "resource"
+    manager_id: Optional[str] = None
+
+
+@router.post("", status_code=201)
+async def create_user(body: CreateUserBody, current_user: dict = Depends(get_current_user)):
+    """Admin: create a new user account."""
+    require_admin(current_user)
+    if body.role not in ("admin", "teamlead", "resource"):
+        raise HTTPException(status_code=400, detail="role must be admin, teamlead, or resource")
+    existing = queries.find_user_by_email(body.email)
+    if existing:
+        raise HTTPException(status_code=409, detail="A user with this email already exists")
+    new_user = queries.create_user(body.email, body.full_name, body.role)
+    if not new_user:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+    user_id = dict(new_user)["user_id"]
+    if body.manager_id:
+        queries.update_user_role_and_manager(user_id, body.role, body.manager_id)
+        queries.bust("subs:")
+    return dict(queries.get_user_by_id(user_id))
+
+
 class AssignBody(BaseModel):
     user_id: str
     role: str

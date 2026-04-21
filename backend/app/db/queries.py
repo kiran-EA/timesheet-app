@@ -74,7 +74,7 @@ def create_entry(user_id: str, task_id: str, task_title: str,
 def resubmit_entry(entry_id: str, user_id: str, work_description: str = None,
                    hours: float = None, task_id: str = None, task_title: str = None):
     """Resource edits a rejected entry and resubmits."""
-    updates, params = ["status = 'resubmitted'", "rejection_reason = NULL"], []
+    updates, params = ["status = 'pending'", "rejection_reason = NULL"], []
     if work_description is not None:
         updates.append("work_description = %s"); params.append(work_description)
     if hours is not None:
