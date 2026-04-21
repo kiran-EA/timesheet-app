@@ -318,9 +318,8 @@ export default function TimesheetPage() {
       // When viewing another user: fetch their specific tasks via ?for_user_id=
       // On initial load (no user selected): admin fetches all project tasks
       const userParam = viewingOther ? `?for_user_id=${forUserId}` : '';
-      const tasksEndpoint = viewingOther
-        ? `${API}/jira/tasks${userParam}`
-        : (isAdmin ? `${API}/jira/all-tasks` : `${API}/jira/tasks`);
+      // Always fetch own tasks via /jira/tasks; only use for_user_id when viewing another user
+      const tasksEndpoint = `${API}/jira/tasks${userParam}`;
 
       const [statusRes, tasksRes, generalRes] = await Promise.all([
         fetch(`${API}/jira/status`,                     { headers: authHeaders(token) }),
@@ -354,8 +353,7 @@ export default function TimesheetPage() {
     if (!entriesFetched || cachedEntriesDateRef.current !== selectedDate) {
       fetchEntries(selectedDate);
     }
-    // Admin always fetches fresh (different endpoint: /jira/all-tasks vs /jira/tasks)
-    if (!tasksFetched || isAdmin) fetchTasks();
+    if (!tasksFetched) fetchTasks();
 
     // Admin: pre-load full user list for the selector
     if (isAdmin) {
@@ -392,7 +390,10 @@ export default function TimesheetPage() {
     setTimeout(() => setSyncMsg(''), 4000);
   };
 
-  // ── entry mutations ───────────────────────────────────────────────────────
+  // ── row-level progress ────────────────────────────────────────────────────
+  const [rowLoading, setRowLoading] = useState<Record<string, 'updating' | 'deleting'>>({});
+
+  // ── entry delete ──────────────────────────────────────────────────────────
   const handleDelete = async (entry: Entry) => {
     setRowLoading((prev) => ({ ...prev, [entry.id]: 'deleting' }));
     const url = isViewingOther
@@ -408,72 +409,50 @@ export default function TimesheetPage() {
     finally { setRowLoading((prev) => { const n = { ...prev }; delete n[entry.id]; return n; }); }
   };
 
-  // ── inline edit ──────────────────────────────────────────────────────────
-  const [editingId,   setEditingId]   = useState<string | null>(null);
-  const [editWork,    setEditWork]    = useState('');
-  const [editHours,   setEditHours]   = useState('');
-  const [rowLoading,  setRowLoading]  = useState<Record<string, 'updating' | 'deleting'>>({});
+  // ── unified edit / resubmit modal ─────────────────────────────────────────
+  const [editModal,        setEditModal]        = useState<{ entry: Entry; task: JiraTask | null } | null>(null);
+  const [editModalWork,    setEditModalWork]    = useState('');
+  const [editModalHours,   setEditModalHours]   = useState('');
+  const [editModalSaving,  setEditModalSaving]  = useState(false);
+  const [editModalError,   setEditModalError]   = useState('');
 
-  const startEdit = (entry: Entry) => {
-    setEditingId(entry.id);
-    setEditWork(entry.work_description);
-    setEditHours(String(entry.hours));
+  const openEditModal = (entry: Entry) => {
+    const task = [...activeTasks, ...activeGeneral].find((t) => t.key === entry.task_id) ?? null;
+    setEditModal({ entry, task });
+    setEditModalWork(entry.work_description);
+    setEditModalHours(String(entry.hours));
+    setEditModalError('');
   };
 
-  const handleEditSave = async (entry: Entry) => {
-    if (!editWork.trim() || !editHours) return;
-    setRowLoading((prev) => ({ ...prev, [entry.id]: 'updating' }));
+  const handleEditModalSave = async () => {
+    if (!editModal) return;
+    const { entry } = editModal;
+    setEditModalSaving(true); setEditModalError('');
+    const isResubmit = entry.status === 'rejected';
+    const url = isResubmit
+      ? `${API}/timesheet/entries/${entry.id}/resubmit`
+      : `${API}/timesheet/entries/${entry.id}/edit`;
     const body: Record<string, unknown> = {
-      work_description: editWork.trim(),
-      hours: parseFloat(editHours),
+      work_description: editModalWork.trim(),
+      hours: parseFloat(editModalHours),
     };
-    if (isViewingOther) body.for_user_id = targetUserId;
+    if (!isResubmit && isViewingOther) body.for_user_id = targetUserId;
     try {
-      const res = await fetch(`${API}/timesheet/entries/${entry.id}/edit`, {
-        method: 'PUT', headers: authHeaders(token),
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const patch = { work_description: updated.work_description, hours: updated.hours };
-        if (isViewingOther) {
-          setAdminViewEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, ...patch } : e));
-        } else {
-          updateEntry(entry.id, patch);
-          updateAllEntry(entry.id, patch);
-        }
-        setEditingId(null);
+      const res = await fetch(url, { method: 'PUT', headers: authHeaders(token), body: JSON.stringify(body) });
+      if (!res.ok) { setEditModalError(`Failed: ${await res.text()}`); return; }
+      const patch = isResubmit
+        ? { work_description: editModalWork.trim(), hours: parseFloat(editModalHours), status: 'resubmitted', rejection_reason: null as null }
+        : { work_description: editModalWork.trim(), hours: parseFloat(editModalHours) };
+      if (isViewingOther) {
+        setAdminViewEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, ...patch } : e));
+      } else {
+        updateEntry(entry.id, patch);
+        updateAllEntry(entry.id, patch);
       }
-    } catch (e) { console.error('edit save', e); }
-    finally { setRowLoading((prev) => { const n = { ...prev }; delete n[entry.id]; return n; }); }
-  };
-
-  // ── resubmit ──────────────────────────────────────────────────────────────
-  const [resubmitEntry,  setResubmitEntry]  = useState<Entry | null>(null);
-  const [resubmitHours,  setResubmitHours]  = useState('');
-  const [resubmitWork,   setResubmitWork]   = useState('');
-  const [resubmitting,   setResubmitting]   = useState(false);
-
-  const openResubmit = (entry: Entry) => {
-    setResubmitEntry(entry);
-    setResubmitHours(String(entry.hours));
-    setResubmitWork(entry.work_description);
-  };
-
-  const handleResubmit = async () => {
-    if (!resubmitEntry) return;
-    setResubmitting(true);
-    const res = await fetch(`${API}/timesheet/entries/${resubmitEntry.id}/resubmit`, {
-      method: 'PUT', headers: authHeaders(token),
-      body: JSON.stringify({ hours: parseFloat(resubmitHours), work_description: resubmitWork }),
-    });
-    if (res.ok) {
-      const patch = { hours: parseFloat(resubmitHours), work_description: resubmitWork, status: 'resubmitted', rejection_reason: null };
-      updateEntry(resubmitEntry.id, patch);
-      updateAllEntry(resubmitEntry.id, patch);
-    }
-    setResubmitting(false);
-    setResubmitEntry(null);
+      setEditModal(null);
+    } catch (e) {
+      setEditModalError(`Network error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setEditModalSaving(false); }
   };
 
   // ── log time modal ────────────────────────────────────────────────────────
@@ -685,9 +664,8 @@ export default function TimesheetPage() {
                 </thead>
                 <tbody>
                   {activeEntries.map((entry) => {
-                    const isEditing  = editingId === entry.id;
-                    const rl         = rowLoading[entry.id];
-                    const canEdit    = isViewingOther || entry.status === 'pending' || entry.status === 'resubmitted';
+                    const rl      = rowLoading[entry.id];
+                    const canEdit = isViewingOther || entry.status === 'pending' || entry.status === 'resubmitted' || entry.status === 'rejected';
                     return (
                     <tr key={entry.id} style={{ borderBottom: t.border,
                       background: entry.status === 'rejected' ? 'rgba(239,68,68,0.03)' : undefined }}>
@@ -698,83 +676,36 @@ export default function TimesheetPage() {
                         </span>
                       </td>
                       <td className="px-4 py-4 max-w-[160px] truncate" style={{ color: t.textBody }}>{entry.task_title}</td>
-
-                      {/* Work Done — inline edit or read */}
                       <td className="px-4 py-4 max-w-[180px]" style={{ color: t.textBody }}>
-                        {isEditing ? (
-                          <input type="text" value={editWork} onChange={(e) => setEditWork(e.target.value)}
-                            className="w-full px-2 py-1 rounded-md text-xs focus:outline-none"
-                            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
-                        ) : (
-                          <>
-                            <div className="truncate">{entry.work_description}</div>
-                            {entry.status === 'rejected' && entry.rejection_reason && (
-                              <div className="mt-1 text-xs px-2 py-1 rounded"
-                                style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626' }}>
-                                ✕ {entry.rejection_reason}
-                              </div>
-                            )}
-                          </>
+                        <div className="truncate">{entry.work_description}</div>
+                        {entry.status === 'rejected' && entry.rejection_reason && (
+                          <div className="mt-1 text-xs px-2 py-1 rounded"
+                            style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626' }}>
+                            ✕ {entry.rejection_reason}
+                          </div>
                         )}
                       </td>
-
-                      {/* Hours — inline edit or read */}
-                      <td className="px-4 py-4 font-mono font-semibold" style={{ color: t.text }}>
-                        {isEditing ? (
-                          <input type="number" min="0.25" step="0.25" value={editHours}
-                            onChange={(e) => setEditHours(e.target.value)}
-                            className="w-20 px-2 py-1 rounded-md text-xs font-mono focus:outline-none"
-                            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
-                        ) : `${entry.hours}h`}
-                      </td>
-
+                      <td className="px-4 py-4 font-mono font-semibold" style={{ color: t.text }}>{entry.hours}h</td>
                       <td className="px-4 py-4"><ApprovalBadge status={entry.status ?? 'pending'} /></td>
-
                       <td className="px-4 py-4">
                         {rl ? (
-                          /* progress label */
                           <span className="text-xs font-medium" style={{ color: t.textSubtle }}>
                             {rl === 'updating' ? `Updating ${entry.task_id}…` : `Deleting ${entry.task_id}…`}
                           </span>
-                        ) : isEditing ? (
-                          /* inline edit actions */
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleEditSave(entry)}
-                              disabled={!editWork.trim() || !editHours}
-                              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-                              style={{ background: '#10b981' }}>
-                              Save
-                            </button>
-                            <button onClick={() => setEditingId(null)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-semibold"
-                              style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
-                              Cancel
-                            </button>
-                          </div>
                         ) : (
-                          /* normal action buttons */
                           <div className="flex items-center gap-2">
-                            {entry.status === 'rejected' && !isViewingOther && (
-                              <button onClick={() => openResubmit(entry)}
-                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition-opacity"
-                                style={{ background: '#7c3aed' }}>
-                                Resubmit
-                              </button>
-                            )}
-                            {/* Edit pencil — admin: all; resource: pending/resubmitted */}
                             {canEdit && (
-                              <button onClick={() => startEdit(entry)}
+                              <button onClick={() => openEditModal(entry)}
                                 className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80 transition-opacity"
                                 style={{ border: t.border, color: t.textMuted, background: 'transparent' }}
-                                title="Edit work done and hours">
+                                title={entry.status === 'rejected' ? 'Edit & Resubmit' : 'Edit entry'}>
                                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                               </button>
                             )}
-                            {/* Delete — admin: all; resource: pending/resubmitted */}
-                            {canEdit && (
+                            {(isViewingOther || entry.status === 'pending' || entry.status === 'resubmitted') && (
                               <button onClick={() => handleDelete(entry)}
                                 className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80 transition-opacity"
                                 style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
@@ -956,52 +887,112 @@ export default function TimesheetPage() {
         );
       })()}
 
-      {/* ── Resubmit Modal ───────────────────────────────────────────────── */}
-      {resubmitEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: t.modalBg, backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-md rounded-2xl p-6 space-y-4 shadow-xl"
-            style={{ background: t.cardBg, border: t.border }}>
-            <div>
-              <h3 className="text-lg font-semibold" style={{ color: t.text }}>Edit & Resubmit</h3>
-              <p className="text-xs mt-0.5 font-mono" style={{ color: '#3b82f6' }}>{resubmitEntry.task_id}</p>
-              {resubmitEntry.rejection_reason && (
-                <div className="mt-2 px-3 py-2 rounded-lg text-xs"
+      {/* ── Edit / Resubmit Modal ────────────────────────────────────────── */}
+      {editModal && (() => {
+        const { entry, task } = editModal;
+        const isResubmit = entry.status === 'rejected';
+        const estH          = task?.est_hours ?? null;
+        const loggedH       = task?.logged_hours ?? 0;
+        const otherLoggedH  = loggedH - entry.hours;   // logged hours excluding this entry
+        const remainingH    = estH != null ? Math.max(0, estH - otherLoggedH) : null;
+        const extraH        = estH != null ? estH * 0.2 : null;
+        const maxCanLog     = remainingH != null ? remainingH + extraH! : null;
+        const enteredH      = parseFloat(editModalHours) || 0;
+        const overLimit     = maxCanLog != null && enteredH > maxCanLog;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: t.modalBg, backdropFilter: 'blur(4px)' }}>
+            <div className="w-full max-w-md rounded-2xl p-6 space-y-4 shadow-xl"
+              style={{ background: t.cardBg, border: t.border }}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold" style={{ color: t.text }}>
+                    {isResubmit ? 'Edit & Resubmit' : 'Edit Entry'}
+                  </h3>
+                  <p className="text-xs mt-0.5 font-mono" style={{ color: '#3b82f6' }}>{entry.task_id}</p>
+                  <p className="text-xs mt-0.5" style={{ color: t.textSubtle }}>{entry.task_title}</p>
+                </div>
+                <button onClick={() => setEditModal(null)} style={{ color: t.textSubtle }}>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Rejection reason */}
+              {isResubmit && entry.rejection_reason && (
+                <div className="px-3 py-2 rounded-lg text-xs"
                   style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#dc2626' }}>
-                  Rejected: {resubmitEntry.rejection_reason}
+                  Rejected: {entry.rejection_reason}
                 </div>
               )}
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Work done</label>
-                <input type="text" value={resubmitWork} onChange={(e) => setResubmitWork(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none"
-                  style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+
+              {/* Hour allocation indicator */}
+              {estH != null && (
+                <div className="px-3 py-2 rounded-lg text-xs flex items-center gap-3 flex-wrap"
+                  style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                  <span style={{ color: t.textMuted }}>
+                    Remaining: <strong style={{ color: remainingH === 0 ? '#ef4444' : '#3b82f6' }}>{remainingH}h</strong>
+                  </span>
+                  <span style={{ color: t.textSubtle }}>|</span>
+                  <span style={{ color: t.textMuted }}>
+                    Extra: <strong style={{ color: '#f59e0b' }}>{extraH!.toFixed(1)}h</strong>
+                  </span>
+                  <span style={{ color: t.textSubtle }}>|</span>
+                  <span style={{ color: t.textMuted }}>
+                    Max: <strong style={{ color: overLimit ? '#ef4444' : '#10b981' }}>{maxCanLog!.toFixed(1)}h</strong>
+                  </span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Work done</label>
+                  <input type="text" value={editModalWork} onChange={(e) => setEditModalWork(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none"
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>
+                    Hours{maxCanLog != null && <span className="ml-2 font-normal text-xs" style={{ color: t.textSubtle }}>(max {maxCanLog.toFixed(1)}h)</span>}
+                  </label>
+                  <input type="number" min="0.25" step="0.25" value={editModalHours}
+                    onChange={(e) => setEditModalHours(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg text-sm font-mono focus:outline-none"
+                    style={{ background: t.inputBg, border: `1px solid ${overLimit ? '#ef4444' : t.inputBorder}`, color: t.text }} />
+                  {overLimit && (
+                    <p className="mt-1 text-xs" style={{ color: '#ef4444' }}>
+                      Exceeds max allowed ({maxCanLog!.toFixed(1)}h = {remainingH}h remaining + {extraH!.toFixed(1)}h extra)
+                    </p>
+                  )}
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Hours</label>
-                <input type="number" min="0.25" max="24" step="0.25" value={resubmitHours}
-                  onChange={(e) => setResubmitHours(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg text-sm font-mono focus:outline-none"
-                  style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }} />
+
+              {editModalError && (
+                <div className="px-3 py-2 rounded-lg text-xs"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#dc2626' }}>
+                  {editModalError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={handleEditModalSave}
+                  disabled={editModalSaving || !editModalWork.trim() || !editModalHours || overLimit}
+                  className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  style={{ background: isResubmit ? '#7c3aed' : 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+                  {editModalSaving ? 'Saving…' : isResubmit ? 'Save & Resubmit' : 'Save Changes'}
+                </button>
+                <button onClick={() => setEditModal(null)}
+                  className="px-5 py-2.5 rounded-lg text-sm font-medium"
+                  style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.textMuted }}>
+                  Cancel
+                </button>
               </div>
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button onClick={handleResubmit} disabled={resubmitting || !resubmitWork || !resubmitHours}
-                className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
-                style={{ background: '#7c3aed' }}>
-                {resubmitting ? 'Submitting…' : 'Resubmit'}
-              </button>
-              <button onClick={() => setResubmitEntry(null)}
-                className="px-5 py-2.5 rounded-lg text-sm font-medium"
-                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.textMuted }}>
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
