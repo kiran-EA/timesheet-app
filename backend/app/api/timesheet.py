@@ -83,7 +83,7 @@ class EditEntryBody(BaseModel):
     for_user_id: Optional[str] = None
 
 
-@router.put("/entries/{entry_id}/edit", response_model=TimesheetEntryResponse)  # v2
+@router.patch("/entries/{entry_id}", response_model=TimesheetEntryResponse)
 async def edit_entry(entry_id: str, body: EditEntryBody, current_user: dict = Depends(get_current_user)):
     """Edit work_description and hours of an existing entry.
     Admin can edit any entry (any status). Resource/teamlead can only edit pending/resubmitted."""

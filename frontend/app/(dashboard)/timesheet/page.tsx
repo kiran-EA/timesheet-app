@@ -431,14 +431,15 @@ export default function TimesheetPage() {
     const isResubmit = entry.status === 'rejected';
     const url = isResubmit
       ? `${API}/timesheet/entries/${entry.id}/resubmit`
-      : `${API}/timesheet/entries/${entry.id}/edit`;
+      : `${API}/timesheet/entries/${entry.id}`;
+    const method = isResubmit ? 'PUT' : 'PATCH';
     const body: Record<string, unknown> = {
       work_description: editModalWork.trim(),
       hours: parseFloat(editModalHours),
     };
     if (!isResubmit && isViewingOther) body.for_user_id = targetUserId;
     try {
-      const res = await fetch(url, { method: 'PUT', headers: authHeaders(token), body: JSON.stringify(body) });
+      const res = await fetch(url, { method, headers: authHeaders(token), body: JSON.stringify(body) });
       if (!res.ok) { setEditModalError(`Failed: ${await res.text()}`); return; }
       const patch = isResubmit
         ? { work_description: editModalWork.trim(), hours: parseFloat(editModalHours), status: 'resubmitted', rejection_reason: null as null }
