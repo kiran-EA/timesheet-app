@@ -28,6 +28,22 @@ app.include_router(approvals.router)
 app.include_router(users.router)
 
 @app.on_event("startup")
+async def write_service_account():
+    """Write service-account.json from env var if file doesn't exist."""
+    import os, json
+    content = os.environ.get("GOOGLE_SERVICE_ACCOUNT_CONTENT", "").strip()
+    if content and not os.path.exists("service-account.json"):
+        try:
+            # validate it's real JSON before writing
+            json.loads(content)
+            with open("service-account.json", "w") as f:
+                f.write(content)
+            print("service-account.json written from env var")
+        except Exception as e:
+            print(f"Failed to write service-account.json: {e}")
+
+
+@app.on_event("startup")
 async def run_migrations():
     """Add new columns that may not exist in the live DB yet."""
     from app.db.database import execute_query
