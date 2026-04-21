@@ -361,8 +361,8 @@ export default function TimesheetPage() {
     if (mountedRef.current) return;
     mountedRef.current = true;
 
-    fetchEntries(selectedDate);   // always fresh — approval by another user changes status
-    if (!tasksFetched) fetchTasks();
+    fetchEntries(selectedDate);      // always fresh — approval by another user changes status
+    fetchTasks(undefined, true);     // force=true — bypass server cache so epic_name is always present
 
     // Admin: pre-load full user list for the selector
     if (isAdmin) {
