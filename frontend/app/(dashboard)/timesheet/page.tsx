@@ -138,18 +138,11 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
                 {!simple && (
                   <td className="px-4 py-4">
                     {task.epic ? (
-                      <div className="flex flex-col gap-0.5">
-                        {task.epic_name && (
-                          <span className="text-xs font-medium leading-tight"
-                            style={{ color: t.textBody }} title={task.epic_name}>
-                            {task.epic_name.length > 28 ? task.epic_name.slice(0, 28) + '…' : task.epic_name}
-                          </span>
-                        )}
-                        <span className="px-2 py-0.5 rounded text-xs font-semibold self-start"
-                          style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
-                          {task.epic}
-                        </span>
-                      </div>
+                      <span className="px-2 py-0.5 rounded text-xs font-semibold cursor-help"
+                        style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}
+                        title={task.epic_name ? `${task.epic_name} (${task.epic})` : task.epic}>
+                        {task.epic}
+                      </span>
                     ) : (
                       <span style={{ color: t.textSubtle }}>—</span>
                     )}
