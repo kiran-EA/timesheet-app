@@ -122,7 +122,8 @@ class JiraService:
                 "fields": [
                     "summary", "status", "assignee",
                     "customfield_10016",        # story points
-                    "customfield_10014",        # epic link
+                    "customfield_10014",        # epic link (legacy key)
+                    "parent",                   # parent issue = epic in Jira Cloud v3
                     "timeoriginalestimate",
                     "timespent",
                     "customfield_10020",        # sprint
@@ -162,7 +163,10 @@ class JiraService:
                 if isinstance(sprints, list) and sprints:
                     sprint_name = sprints[-1].get("name")
 
-                epic = fields.get("customfield_10014")
+                # Epic: prefer parent field (Jira Cloud v3), fall back to customfield_10014
+                parent = fields.get("parent") or {}
+                epic_key  = parent.get("key") or fields.get("customfield_10014")
+                epic_name = (parent.get("fields") or {}).get("summary")
 
                 assignee_field = fields.get("assignee") or {}
                 assignee_name  = assignee_field.get("displayName")
@@ -171,7 +175,8 @@ class JiraService:
                     "id":               issue["id"],
                     "key":              issue["key"],
                     "title":            summary,
-                    "epic":             epic,
+                    "epic":             epic_key,
+                    "epic_name":        epic_name,
                     "story_points":     sp,
                     "est_hours":        est_hours,
                     "logged_hours":     0,
@@ -196,7 +201,8 @@ class JiraService:
                 "fields": [
                     "summary", "status", "assignee",
                     "customfield_10016",        # story points
-                    "customfield_10014",        # epic link
+                    "customfield_10014",        # epic link (legacy)
+                    "parent",                   # parent issue = epic in Jira Cloud v3
                     "timeoriginalestimate",
                     "timespent",
                     "customfield_10020",        # sprint
@@ -233,7 +239,9 @@ class JiraService:
                 if isinstance(sprints, list) and sprints:
                     sprint_name = sprints[-1].get("name")
 
-                epic = fields.get("customfield_10014")
+                parent = fields.get("parent") or {}
+                epic_key  = parent.get("key") or fields.get("customfield_10014")
+                epic_name = (parent.get("fields") or {}).get("summary")
 
                 assignee_field = fields.get("assignee") or {}
                 assignee_name = assignee_field.get("displayName")
@@ -242,7 +250,8 @@ class JiraService:
                     "id":               issue["id"],
                     "key":              issue["key"],
                     "title":            summary,
-                    "epic":             epic,
+                    "epic":             epic_key,
+                    "epic_name":        epic_name,
                     "story_points":     sp,
                     "est_hours":        est_hours,
                     "logged_hours":     0,

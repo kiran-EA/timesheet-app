@@ -33,7 +33,8 @@ class JiraTask(BaseModel):
     id: str
     key: str
     title: str
-    epic: Optional[str] = None
+    epic: Optional[str] = None        # epic key, e.g. "HSB-5"
+    epic_name: Optional[str] = None   # epic summary/title, e.g. "Phase 1 Development"
     story_points: Optional[float] = None
     est_hours: Optional[float] = None
     logged_hours: float = 0

@@ -13,7 +13,8 @@ export interface JiraTaskCached {
   id: string;
   key: string;
   title: string;
-  epic: string | null;
+  epic: string | null;       // epic key, e.g. "HSB-5"
+  epic_name: string | null;  // epic title, e.g. "Phase 1 Development"
   story_points: number | null;
   est_hours: number | null;
   logged_hours: number;
