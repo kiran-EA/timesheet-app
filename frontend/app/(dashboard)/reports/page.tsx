@@ -35,20 +35,27 @@ function aH(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getWeekRange() {
   const today = new Date();
   const mon = new Date(today);
   mon.setDate(today.getDate() - today.getDay() + 1);
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
-  return { start: mon.toISOString().split('T')[0], end: sun.toISOString().split('T')[0] };
+  return { start: localDateStr(mon), end: localDateStr(sun) };
 }
 
 function getMonthRange() {
   const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
-  return { start, end };
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const end   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return { start: localDateStr(start), end: localDateStr(end) };
 }
 
 /** Count Mon–Fri days between two ISO date strings (inclusive). */
