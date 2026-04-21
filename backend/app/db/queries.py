@@ -414,6 +414,19 @@ def get_task_breakdown_for_user(user_id: str, start_date: str, end_date: str) ->
     return execute_query(query, (user_id, start_date, end_date), fetch_all=True) or []
 
 
+def get_all_epic_dashboard_entries() -> list:
+    """Epic dashboard: ALL logged hours (no date filter) grouped by user + task + epic."""
+    return execute_query("""
+        SELECT te.user_id, te.task_id, te.task_title,
+               COALESCE(te.epic, '') AS epic,
+               CAST(SUM(te.hours) AS FLOAT) AS total_hours,
+               COUNT(*) AS total_entries
+        FROM timesheet_entries te
+        GROUP BY te.user_id, te.task_id, te.task_title, te.epic
+        ORDER BY te.epic, te.user_id
+    """, fetch_all=True) or []
+
+
 def get_epic_dashboard_entries(start_date: str, end_date: str) -> list:
     """Epic dashboard: logged hours grouped by user + task + epic for the date range.
     Used to overlay DB hours onto Jira task/epic data."""

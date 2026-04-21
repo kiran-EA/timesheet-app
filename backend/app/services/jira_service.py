@@ -319,5 +319,158 @@ class JiraService:
             print(f"get_all_sprint_keys error: {e}")
         return set()
 
+    # ── Epic dashboard helpers ──────────────────────────────────────────────────
+
+    def get_active_sprint_keys_for_tasks(self, task_keys: list) -> set:
+        """Given a list of task keys, return those currently in an active sprint.
+        Works across all projects (not just HSB)."""
+        if not task_keys:
+            return set()
+        try:
+            # Batch in 100s to avoid JQL length limits
+            active = set()
+            for i in range(0, len(task_keys), 100):
+                batch = task_keys[i:i+100]
+                keys_str = ", ".join(batch)
+                jql = f'issueKey in ({keys_str}) AND sprint in openSprints()'
+                r = requests.post(
+                    f"{self.base_url}/search/jql",
+                    auth=self.auth,
+                    headers={**self.headers, "Content-Type": "application/json"},
+                    json={"jql": jql, "maxResults": 200, "fields": ["summary"]},
+                    timeout=15,
+                )
+                if r.ok:
+                    active.update(i["key"] for i in r.json().get("issues", []))
+            print(f"get_active_sprint_keys_for_tasks: {len(active)} active sprint tasks out of {len(task_keys)}")
+            return active
+        except Exception as e:
+            print(f"get_active_sprint_keys_for_tasks error: {e}")
+        return set()
+
+    def get_all_open_epics(self) -> list:
+        """Fetch all open Epic-type issues across all projects.
+        Returns list of {key, name, status}."""
+        try:
+            r = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={
+                    "jql": "issuetype = Epic AND statusCategory != Done ORDER BY updated DESC",
+                    "maxResults": 100,
+                    "fields": ["summary", "status", "assignee", "customfield_10020"],
+                },
+                timeout=15,
+            )
+            if r.ok:
+                epics = []
+                for issue in r.json().get("issues", []):
+                    fields = issue.get("fields", {})
+                    sprint_name = None
+                    sprints = fields.get("customfield_10020") or []
+                    if isinstance(sprints, list) and sprints:
+                        sprint_name = sprints[-1].get("name")
+                    epics.append({
+                        "key":    issue["key"],
+                        "name":   fields.get("summary", ""),
+                        "status": fields.get("status", {}).get("name", "Unknown"),
+                        "sprint": sprint_name,
+                    })
+                print(f"get_all_open_epics: found {len(epics)} epics")
+                return epics
+        except Exception as e:
+            print(f"get_all_open_epics error: {e}")
+        return []
+
+    def get_tasks_for_epics(self, epic_keys: list) -> list:
+        """Batch-fetch all child tasks for a list of epic keys.
+        Works for both next-gen (parent = EPIC) and classic (Epic Link = EPIC) projects.
+        Returns list of task dicts compatible with get_user_tasks output."""
+        if not epic_keys:
+            return []
+        import re
+        try:
+            keys_str = ", ".join(epic_keys)
+            # Use 'parent in (...)' which works for next-gen projects
+            # and '"Epic Link" in (...)' for classic projects — combine with OR
+            jql = (
+                f'(parent in ({keys_str}) OR "Epic Link" in ({keys_str})) '
+                f'AND statusCategory != Done ORDER BY updated DESC'
+            )
+            payload = {
+                "jql": jql,
+                "maxResults": 500,
+                "fields": [
+                    "summary", "status", "assignee",
+                    "customfield_10016",   # story points
+                    "customfield_10014",   # epic link (legacy)
+                    "parent",
+                    "timeoriginalestimate",
+                    "timespent",
+                    "customfield_10020",   # sprint
+                ],
+            }
+            r = requests.post(
+                f"{self.base_url}/search/jql",
+                auth=self.auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=payload,
+                timeout=20,
+            )
+            if not r.ok:
+                print(f"get_tasks_for_epics failed: {r.status_code} {r.text[:200]}")
+                return []
+
+            tasks = []
+            for issue in r.json().get("issues", []):
+                fields  = issue.get("fields", {})
+                summary = fields.get("summary", "")
+
+                sp = fields.get("customfield_10016") or fields.get("customfield_10028")
+                if sp is None:
+                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
+                    if m:
+                        sp = float(m.group(1))
+                est_hours = round(sp * 8, 2) if sp is not None else None
+
+                sprint_name = None
+                sprints = fields.get("customfield_10020") or []
+                if isinstance(sprints, list) and sprints:
+                    sprint_name = sprints[-1].get("name")
+
+                # Determine the epic key for this task
+                parent = fields.get("parent") or {}
+                parent_type = (parent.get("fields") or {}).get("issuetype", {}).get("name", "")
+                if parent_type == "Epic":
+                    epic_key  = parent.get("key")
+                    epic_name = (parent.get("fields") or {}).get("summary")
+                else:
+                    # Classic: "Epic Link" field
+                    epic_key  = fields.get("customfield_10014")
+                    epic_name = None
+
+                assignee_field = fields.get("assignee") or {}
+                tasks.append({
+                    "id":               issue["id"],
+                    "key":              issue["key"],
+                    "title":            summary,
+                    "epic":             epic_key,
+                    "epic_name":        epic_name,
+                    "story_points":     sp,
+                    "est_hours":        est_hours,
+                    "logged_hours":     0,
+                    "status":           fields.get("status", {}).get("name", "Unknown"),
+                    "sprint":           sprint_name,
+                    "is_active_sprint": False,
+                    "assignee":         assignee_field.get("displayName"),
+                })
+
+            print(f"get_tasks_for_epics({len(epic_keys)} epics): found {len(tasks)} tasks")
+            return tasks
+        except Exception as e:
+            print(f"get_tasks_for_epics error: {e}")
+        return []
+
 
 jira_service = JiraService()

@@ -346,7 +346,8 @@ function ResourceSection({
 interface EpicMemberTask {
   key: string;
   title: string;
-  est_hours: number | null;
+  story_points: number | null;
+  est_hours: number | null;   // SP × 8 × 1.2
   logged_hours: number;
   status: string;
   is_active_sprint: boolean;
@@ -578,26 +579,23 @@ function MemberBlock({ member }: { member: EpicMember }) {
 }
 
 // ── Project / Epic dashboard panel ────────────────────────────────────────────
-function ProjectView({
-  token, startDate, endDate, preset,
-}: {
-  token: string; startDate: string; endDate: string; preset: Preset;
-}) {
-  const [epics,       setEpics]       = useState<EpicStat[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [sprintOnly,  setSprintOnly]  = useState(false);
-  const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
+function ProjectView({ token }: { token: string }) {
+  const [epics,      setEpics]      = useState<EpicStat[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [sprintOnly, setSprintOnly] = useState(false);
+  const [expanded,   setExpanded]   = useState<Set<string>>(new Set());
 
   const fetchEpics = useCallback(async () => {
     setLoading(true);
     setExpanded(new Set());
     try {
-      const url = `${API}/jira/epic-dashboard?start_date=${startDate}&end_date=${endDate}&sprint_only=${sprintOnly}`;
+      // No date params — logged hours are all-time in Project View
+      const url = `${API}/jira/epic-dashboard?sprint_only=${sprintOnly}`;
       const res = await fetch(url, { headers: aH(token) });
       if (res.ok) setEpics((await res.json()).epics ?? []);
     } catch (ex) { console.error(ex); }
     finally { setLoading(false); }
-  }, [token, startDate, endDate, sprintOnly]);
+  }, [token, sprintOnly]);
 
   useEffect(() => { fetchEpics(); }, [fetchEpics]);
 
@@ -608,24 +606,22 @@ function ProjectView({
       return next;
     });
 
-  const totalLogged = epics
-    .filter((e) => e.epic_key !== 'GENERAL')
-    .reduce((s, e) => s + Number(e.total_logged_hours || 0), 0);
-  const totalEst = epics
-    .filter((e) => e.total_est_hours != null)
-    .reduce((s, e) => s + Number(e.total_est_hours || 0), 0);
-  const overallPct = totalEst > 0 ? Math.round((totalLogged / totalEst) * 100) : 0;
-
-  const fmtDate = (d: string) =>
-    new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const projectEpics = epics.filter((e) => e.epic_key !== 'GENERAL');
+  const totalLogged  = projectEpics.reduce((s, e) => s + Number(e.total_logged_hours || 0), 0);
+  const totalEst     = projectEpics.filter((e) => e.total_est_hours != null)
+                                   .reduce((s, e) => s + Number(e.total_est_hours || 0), 0);
+  const overallPct   = totalEst > 0 ? Math.min(100, Math.round((totalLogged / totalEst) * 100)) : 0;
 
   return (
     <div className="space-y-6">
       {/* controls row */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <p className="text-sm" style={{ color: t.textSubtle }}>
-          {fmtDate(startDate)} – {fmtDate(endDate)}
-        </p>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs px-2.5 py-1 rounded-md" style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6' }}>
+          Logged hours: all time
+        </span>
+        <span className="text-xs px-2.5 py-1 rounded-md" style={{ background: 'rgba(139,92,246,0.08)', color: '#7c3aed' }}>
+          Est = SP × 8h + 20% buffer
+        </span>
         <button
           onClick={() => setSprintOnly((v) => !v)}
           className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
@@ -837,7 +833,7 @@ export default function ReportsPage() {
 
         {/* ── Project View ── */}
         {activeTab === 'project' ? (
-          <ProjectView token={token} startDate={startDate} endDate={endDate} preset={preset} />
+          <ProjectView token={token} />
         ) : (
           <>
             {/* ── Date range label ── */}
