@@ -218,7 +218,7 @@ def get_pending_entries_for_manager(manager_id: str, entry_date: str = None) -> 
         return val
     if entry_date:
         query = """
-            SELECT te.*, u.full_name, u.email, u.avatar
+            SELECT te.*, u.full_name, u.email, u.avatar, u.role
             FROM timesheet_entries te
             JOIN users u ON u.user_id = te.user_id
             WHERE u.manager_id = %s AND u.is_active = true
@@ -229,7 +229,7 @@ def get_pending_entries_for_manager(manager_id: str, entry_date: str = None) -> 
         result = execute_query(query, (manager_id, entry_date), fetch_all=True) or []
     else:
         query = """
-            SELECT te.*, u.full_name, u.email, u.avatar
+            SELECT te.*, u.full_name, u.email, u.avatar, u.role
             FROM timesheet_entries te
             JOIN users u ON u.user_id = te.user_id
             WHERE u.manager_id = %s AND u.is_active = true
@@ -239,6 +239,33 @@ def get_pending_entries_for_manager(manager_id: str, entry_date: str = None) -> 
         result = execute_query(query, (manager_id,), fetch_all=True) or []
     _set(key, result)
     return result
+
+
+def get_all_pending_entries(entry_date: str = None) -> list:
+    """Admin: fetch ALL pending/resubmitted entries across every user. Not cached."""
+    if entry_date:
+        query = """
+            SELECT te.*, u.full_name, u.email, u.avatar, u.role,
+                   m.full_name AS manager_name
+            FROM timesheet_entries te
+            JOIN users u ON u.user_id = te.user_id
+            LEFT JOIN users m ON m.user_id = u.manager_id
+            WHERE te.entry_date = %s
+              AND te.status IN ('pending', 'resubmitted')
+            ORDER BY te.entry_date DESC, u.full_name
+        """
+        return execute_query(query, (entry_date,), fetch_all=True) or []
+    else:
+        query = """
+            SELECT te.*, u.full_name, u.email, u.avatar, u.role,
+                   m.full_name AS manager_name
+            FROM timesheet_entries te
+            JOIN users u ON u.user_id = te.user_id
+            LEFT JOIN users m ON m.user_id = u.manager_id
+            WHERE te.status IN ('pending', 'resubmitted')
+            ORDER BY te.entry_date DESC, u.full_name
+        """
+        return execute_query(query, fetch_all=True) or []
 
 
 def approve_entry(entry_id: str, approved_by: str):
@@ -253,6 +280,22 @@ def reject_entry(entry_id: str, rejected_by: str, reason: str):
         "UPDATE timesheet_entries SET status='rejected', approved_by=%s, rejection_reason=%s, approved_at=CURRENT_TIMESTAMP WHERE id=%s",
         (rejected_by, reason, entry_id), fetch_all=False
     )
+
+
+def approve_all_entries(approved_by: str, entry_date: str = None):
+    """Admin: approve ALL pending/resubmitted entries across every user."""
+    if entry_date:
+        execute_query(
+            """UPDATE timesheet_entries SET status='approved', approved_by=%s, approved_at=CURRENT_TIMESTAMP
+               WHERE entry_date=%s AND status IN ('pending','resubmitted')""",
+            (approved_by, entry_date), fetch_all=False
+        )
+    else:
+        execute_query(
+            """UPDATE timesheet_entries SET status='approved', approved_by=%s, approved_at=CURRENT_TIMESTAMP
+               WHERE status IN ('pending','resubmitted')""",
+            (approved_by,), fetch_all=False
+        )
 
 
 def approve_all_for_manager(manager_id: str, entry_date: str = None):

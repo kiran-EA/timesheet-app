@@ -20,6 +20,8 @@ interface PendingEntry {
   full_name: string;
   email: string;
   avatar: string;
+  role: string;
+  manager_name: string | null;
 }
 
 function aH(token: string) {
@@ -207,13 +209,35 @@ export default function ApprovalsPage() {
               {/* User header */}
               <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: t.border, background: t.cardBg2 }}>
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white"
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
                     style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
                     {info.avatar || info.full_name[0]}
                   </div>
                   <div>
-                    <p className="font-semibold text-sm" style={{ color: t.text }}>{info.full_name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-sm" style={{ color: t.text }}>{info.full_name}</p>
+                      {/* role badge */}
+                      {(() => {
+                        const roleStyles: Record<string, { bg: string; color: string }> = {
+                          admin:    { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' },
+                          teamlead: { bg: 'rgba(139,92,246,0.12)', color: '#7c3aed' },
+                          resource: { bg: 'rgba(16,185,129,0.12)', color: '#059669' },
+                        };
+                        const rs = roleStyles[info.role] ?? { bg: 'rgba(100,116,139,0.12)', color: '#64748b' };
+                        return (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"
+                            style={{ background: rs.bg, color: rs.color }}>
+                            {info.role === 'teamlead' ? 'Teamlead' : info.role}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <p className="text-xs" style={{ color: t.textMuted }}>{info.email}</p>
+                    {info.manager_name && (
+                      <p className="text-xs mt-0.5" style={{ color: t.textSubtle }}>
+                        Reports to: {info.manager_name}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <span className="text-xs font-medium px-3 py-1 rounded-full"

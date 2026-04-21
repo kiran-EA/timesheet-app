@@ -18,10 +18,14 @@ async def get_pending(
     entry_date: Optional[str] = Query(None, description="Filter by date YYYY-MM-DD (omit for all dates)"),
     current_user: dict = Depends(get_current_user),
 ):
-    """Get all pending/resubmitted entries from direct subordinates."""
+    """Get pending/resubmitted entries.
+    Admin → ALL users across the system.
+    Teamlead → direct subordinates only."""
     require_manager(current_user)
-    manager_id = current_user["sub"]
-    rows = queries.get_pending_entries_for_manager(manager_id, entry_date)
+    if current_user.get("role") == "admin":
+        rows = queries.get_all_pending_entries(entry_date)
+    else:
+        rows = queries.get_pending_entries_for_manager(current_user["sub"], entry_date)
     return {"entries": [dict(r) for r in rows], "count": len(rows)}
 
 
@@ -52,9 +56,14 @@ async def approve_all(
     entry_date: Optional[str] = Query(None),
     current_user: dict = Depends(get_current_user),
 ):
-    """Approve all pending entries from subordinates (optional date filter)."""
+    """Approve all pending entries.
+    Admin → all users across system.
+    Teamlead → direct subordinates only."""
     require_manager(current_user)
-    queries.approve_all_for_manager(current_user["sub"], entry_date)
+    if current_user.get("role") == "admin":
+        queries.approve_all_entries(current_user["sub"], entry_date)
+    else:
+        queries.approve_all_for_manager(current_user["sub"], entry_date)
     queries.bust(f"pending:{current_user['sub']}")
     return {"status": "all_approved"}
 

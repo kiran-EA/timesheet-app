@@ -344,15 +344,13 @@ export default function TimesheetPage() {
     } finally { setLoadingTasks(false); }
   }, [token, setTasks, isAdmin, myUserId]);
 
-  // ── on mount: use cache if available, otherwise fetch ────────────────────
+  // ── on mount: always fetch fresh entries (status changes when manager approves) ──
   const mountedRef = useRef(false);
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
 
-    if (!entriesFetched || cachedEntriesDateRef.current !== selectedDate) {
-      fetchEntries(selectedDate);
-    }
+    fetchEntries(selectedDate);   // always fresh — approval by another user changes status
     if (!tasksFetched) fetchTasks();
 
     // Admin: pre-load full user list for the selector
@@ -429,17 +427,15 @@ export default function TimesheetPage() {
     const { entry } = editModal;
     setEditModalSaving(true); setEditModalError('');
     const isResubmit = entry.status === 'rejected';
-    const url = isResubmit
-      ? `${API}/timesheet/entries/${entry.id}/resubmit`
-      : `${API}/timesheet/entries/${entry.id}`;
-    const method = isResubmit ? 'PUT' : 'PATCH';
+    const url = `${API}/timesheet/entries/${entry.id}/resubmit`;
     const body: Record<string, unknown> = {
       work_description: editModalWork.trim(),
       hours: parseFloat(editModalHours),
+      is_resubmit: isResubmit,
     };
-    if (!isResubmit && isViewingOther) body.for_user_id = targetUserId;
+    if (isViewingOther) body.for_user_id = targetUserId;
     try {
-      const res = await fetch(url, { method, headers: authHeaders(token), body: JSON.stringify(body) });
+      const res = await fetch(url, { method: 'PUT', headers: authHeaders(token), body: JSON.stringify(body) });
       if (!res.ok) { setEditModalError(`Failed: ${await res.text()}`); return; }
       const patch = isResubmit
         ? { work_description: editModalWork.trim(), hours: parseFloat(editModalHours), status: 'resubmitted', rejection_reason: null as null }
