@@ -16,12 +16,13 @@ _STATUS_TTL = 120   # 2 minutes
 _LOGGED_TTL = 30    # 30 seconds
 
 
-def _fetch_tasks_cached(email: str) -> tuple[list, set]:
-    """Run both Jira calls in parallel and cache the combined result for 5 minutes."""
+def _fetch_tasks_cached(email: str, force: bool = False) -> tuple[list, set]:
+    """Run both Jira calls in parallel and cache the combined result for 5 minutes.
+    Pass force=True to bypass the cache (used by Sync button)."""
     now = time.time()
     key = f"tasks:{email}"
     entry = _task_cache.get(key)
-    if entry and now - entry["ts"] < _TASK_TTL:
+    if not force and entry and now - entry["ts"] < _TASK_TTL:
         return entry["tasks"], entry["active_keys"]
 
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -72,6 +73,7 @@ async def jira_status(current_user: dict = Depends(get_current_user)):
 @router.get("/tasks", response_model=list[JiraTask])
 async def get_my_tasks(
     for_user_id: Optional[str] = None,
+    force: bool = False,
     current_user: dict = Depends(get_current_user),
 ):
     # Admin can fetch tasks for any user via ?for_user_id=
@@ -85,7 +87,7 @@ async def get_my_tasks(
         email   = current_user.get("email")
         user_id = current_user.get("sub")
 
-    tasks, active_keys = _fetch_tasks_cached(email)
+    tasks, active_keys = _fetch_tasks_cached(email, force=force)
 
     # Remove general purpose tasks from personal task list
     tasks = [t for t in tasks if t["key"] not in GENERAL_TASK_KEYS]

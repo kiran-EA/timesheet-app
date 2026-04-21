@@ -321,15 +321,16 @@ export default function TimesheetPage() {
     finally { setLoadingEntries(false); }
   }, [token, setEntries, setAdminViewEntries, setAdminViewWeekHours, setAdminViewFetchedAt]);
 
-  const fetchTasks = useCallback(async (forUserId?: string) => {
+  const fetchTasks = useCallback(async (forUserId?: string, force = false) => {
     setLoadingTasks(true); setError('');
     try {
       const viewingOther = isAdmin && forUserId && forUserId !== myUserId;
       // When viewing another user: fetch their specific tasks via ?for_user_id=
       // On initial load (no user selected): admin fetches all project tasks
       const userParam = viewingOther ? `?for_user_id=${forUserId}` : '';
+      const forceParam = force ? (userParam ? '&force=true' : '?force=true') : '';
       // Always fetch own tasks via /jira/tasks; only use for_user_id when viewing another user
-      const tasksEndpoint = `${API}/jira/tasks${userParam}`;
+      const tasksEndpoint = `${API}/jira/tasks${userParam}${forceParam}`;
 
       const [statusRes, tasksRes, generalRes] = await Promise.all([
         fetch(`${API}/jira/status`,                     { headers: authHeaders(token) }),
@@ -393,7 +394,7 @@ export default function TimesheetPage() {
   const handleRefreshEntries = () => fetchEntries(selectedDate, isViewingOther ? targetUserId : undefined);
 
   const handleRefreshTasks = async () => {
-    await fetchTasks(isViewingOther ? targetUserId : undefined);
+    await fetchTasks(isViewingOther ? targetUserId : undefined, true); // force=true bypasses server cache
     setSyncMsg(`Synced — ${new Date().toLocaleTimeString()}`);
     setTimeout(() => setSyncMsg(''), 4000);
   };
