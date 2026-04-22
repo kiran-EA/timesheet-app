@@ -440,3 +440,14 @@ def get_epic_dashboard_entries(start_date: str, end_date: str) -> list:
         GROUP BY te.user_id, te.task_id, te.task_title, te.epic
         ORDER BY te.epic, te.user_id
     """, (start_date, end_date), fetch_all=True) or []
+
+
+def get_user_entries_in_range(user_id: str, start_date: str, end_date: str) -> list:
+    """All timesheet entries for a user in date range — used for Resource View drill-down."""
+    return execute_query("""
+        SELECT id, user_id, task_id, task_title, entry_date,
+               work_description, hours, status, epic
+        FROM timesheet_entries
+        WHERE user_id = %s AND entry_date BETWEEN %s AND %s
+        ORDER BY entry_date DESC, created_at DESC
+    """, (user_id, start_date, end_date), fetch_all=True) or []

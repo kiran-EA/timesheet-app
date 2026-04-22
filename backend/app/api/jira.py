@@ -7,6 +7,7 @@ from app.db import queries
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 import time
+import re
 
 router = APIRouter(prefix="/jira", tags=["Jira"])
 
@@ -411,3 +412,139 @@ async def get_epic_dashboard(
         })
 
     return {"epics": result}
+
+
+# ── Resource View drill-down: User → Jira Space → Epic → Entries ─────────────
+
+@router.get("/user-spaces")
+async def get_user_spaces(
+    user_id: str,
+    start_date: str,
+    end_date: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin/Teamlead: timesheet drill-down for a single user.
+    Structure driven by Jira assigned tasks (not just logged entries), so spaces
+    appear even when 0 hours have been logged in the date range.
+    Returns: spaces → epics → entries, each with total/sprint/logged task counts."""
+    role = current_user.get("role")
+    if role not in ("admin", "teamlead"):
+        raise HTTPException(status_code=403, detail="Admin or Teamlead access required")
+
+    # 1. Resolve user email to fetch their Jira tasks
+    user = queries.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    email = user["email"]
+
+    # 2. Jira tasks assigned to this user (cached 5 min) + active sprint keys
+    jira_tasks, active_sprint_keys = _fetch_tasks_cached(email)
+    jira_tasks = [t for t in jira_tasks if t["key"] not in GENERAL_TASK_KEYS]
+
+    # 3. DB timesheet entries for this user in the date range
+    db_entries = queries.get_user_entries_in_range(user_id, start_date, end_date)
+
+    # 4. Jira project names
+    project_names = jira_service.get_all_projects()
+
+    def _space(key: str) -> str:
+        m = re.match(r'^([A-Z]+)-\d+$', key or "")
+        return m.group(1) if m else "OTHER"
+
+    # 5. Index DB entries by task_id for fast lookup
+    entries_by_task: dict = defaultdict(list)
+    for e in db_entries:
+        entries_by_task[e["task_id"]].append(e)
+
+    # 6. Build Jira structure: space → epic → [tasks]
+    #    Use "__none__" as placeholder for tasks with no epic
+    space_epic_tasks: dict = defaultdict(lambda: defaultdict(list))
+    for task in jira_tasks:
+        space = _space(task["key"])
+        epic  = task.get("epic") or "__none__"
+        space_epic_tasks[space][epic].append(task)
+
+    # 7. Also include DB-only entries (tasks that are Done in Jira / no longer assigned)
+    #    so logged hours are never lost from the view
+    jira_keys = {t["key"] for t in jira_tasks}
+    for e in db_entries:
+        tid = e["task_id"]
+        if tid not in jira_keys:
+            space = _space(tid)
+            epic  = e.get("epic") or "__none__"
+            # Create a synthetic task entry so it appears in the structure
+            if not any(t["key"] == tid for t in space_epic_tasks[space][epic]):
+                space_epic_tasks[space][epic].append({
+                    "key":   tid,
+                    "title": e["task_title"],
+                    "epic":  e.get("epic"),
+                    "epic_name": None,
+                    "story_points": None,
+                    "is_active_sprint": False,
+                    "_db_only": True,
+                })
+
+    # 8. Build response
+    result = []
+    for space_key in sorted(space_epic_tasks.keys()):
+        epics_data  = space_epic_tasks[space_key]
+        sp_total    = 0
+        sp_sprint   = 0
+        sp_logged   = 0
+        sp_hours    = 0.0
+        epics_list  = []
+
+        # Epics alphabetically, "__none__" last
+        for ek in sorted(epics_data.keys(), key=lambda k: (1, k) if k == "__none__" else (0, k)):
+            tasks        = epics_data[ek]
+            ep_total     = len(tasks)
+            ep_sprint    = sum(1 for t in tasks if t["key"] in active_sprint_keys)
+            ep_logged    = sum(1 for t in tasks if t["key"] in entries_by_task)
+            ep_hours     = sum(
+                sum(float(e["hours"]) for e in entries_by_task.get(t["key"], []))
+                for t in tasks
+            )
+
+            sp_total  += ep_total
+            sp_sprint += ep_sprint
+            sp_logged += ep_logged
+            sp_hours  += ep_hours
+
+            # All DB entries for tasks in this epic, newest first
+            all_entries = []
+            for t in tasks:
+                for e in entries_by_task.get(t["key"], []):
+                    all_entries.append({
+                        "id":               e["id"],
+                        "entry_date":       str(e["entry_date"]),
+                        "task_id":          e["task_id"],
+                        "task_title":       e["task_title"],
+                        "work_description": e.get("work_description") or "",
+                        "hours":            float(e["hours"]),
+                        "status":           e["status"],
+                    })
+            all_entries.sort(key=lambda x: x["entry_date"], reverse=True)
+
+            real_ek    = None if ek == "__none__" else ek
+            epic_name  = tasks[0].get("epic_name") if real_ek and tasks else None
+            epics_list.append({
+                "epic_key":     real_ek,
+                "epic_name":    epic_name,
+                "total_tasks":  ep_total,
+                "sprint_tasks": ep_sprint,
+                "logged_tasks": ep_logged,
+                "total_hours":  round(ep_hours, 2),
+                "entries":      all_entries,
+            })
+
+        result.append({
+            "space_key":    space_key,
+            "space_name":   project_names.get(space_key, space_key),
+            "total_tasks":  sp_total,
+            "sprint_tasks": sp_sprint,
+            "logged_tasks": sp_logged,
+            "total_hours":  round(sp_hours, 2),
+            "epics":        epics_list,
+        })
+
+    return {"spaces": result}

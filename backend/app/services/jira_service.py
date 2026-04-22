@@ -472,5 +472,21 @@ class JiraService:
             print(f"get_tasks_for_epics error: {e}")
         return []
 
+    def get_all_projects(self) -> dict:
+        """Return {project_key: project_name} for all visible Jira projects."""
+        try:
+            r = requests.get(
+                f"{self.base_url}/project/search",
+                auth=self.auth,
+                headers=self.headers,
+                params={"maxResults": 100},
+                timeout=15,
+            )
+            if r.ok:
+                return {p["key"]: p["name"] for p in r.json().get("values", [])}
+        except Exception as e:
+            print(f"get_all_projects error: {e}")
+        return {}
+
 
 jira_service = JiraService()

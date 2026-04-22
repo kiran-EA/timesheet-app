@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { t } from '@/lib/theme';
@@ -19,16 +19,6 @@ interface ResourceStat {
   total_entries: number;
   pending_count: number;
   approved_count: number;
-}
-
-interface TaskStat {
-  task_id: string;
-  task_title: string;
-  total_hours: number;
-  total_entries: number;
-  pending_count: number;
-  approved_count: number;
-  rejected_count: number;
 }
 
 function aH(token: string) {
@@ -84,38 +74,76 @@ function StatusPill({ count, color, bg }: { count: number; color: string; bg: st
   );
 }
 
-// ── task breakdown sub-table ───────────────────────────────────────────────────
-function TaskBreakdown({
-  userId, startDate, endDate, token,
-}: {
+// ── Resource View drill-down types ────────────────────────────────────────────
+interface SpaceEntry {
+  id: string;
+  entry_date: string;
+  task_id: string;
+  task_title: string;
+  work_description: string;
+  hours: number;
+  status: string;
+}
+
+interface SpaceEpic {
+  epic_key: string | null;
+  epic_name: string | null;
+  total_tasks: number;
+  sprint_tasks: number;
+  logged_tasks: number;
+  total_hours: number;
+  entries: SpaceEntry[];
+}
+
+interface SpaceData {
+  space_key: string;
+  space_name: string;
+  total_tasks: number;
+  sprint_tasks: number;
+  logged_tasks: number;
+  total_hours: number;
+  epics: SpaceEpic[];
+}
+
+// ── Resource View drill-down: Space → Epic → Entries ──────────────────────────
+function SpaceDrillDown({ userId, startDate, endDate, token }: {
   userId: string; startDate: string; endDate: string; token: string;
 }) {
-  const [tasks, setTasks] = useState<TaskStat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [spaces,     setSpaces]     = useState<SpaceData[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [openSpaces, setOpenSpaces] = useState<Set<string>>(new Set());
+  const [openEpics,  setOpenEpics]  = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setLoading(true);
     fetch(
-      `${API}/approvals/analytics/tasks?user_id=${userId}&start_date=${startDate}&end_date=${endDate}`,
+      `${API}/jira/user-spaces?user_id=${userId}&start_date=${startDate}&end_date=${endDate}`,
       { headers: aH(token) },
     )
-      .then((r) => r.ok ? r.json() : { tasks: [] })
-      .then((d) => setTasks(d.tasks ?? []))
-      .catch(() => setTasks([]))
+      .then((r) => r.ok ? r.json() : { spaces: [] })
+      .then((d) => setSpaces(d.spaces ?? []))
+      .catch(() => setSpaces([]))
       .finally(() => setLoading(false));
   }, [userId, startDate, endDate, token]);
+
+  const toggleSpace = (key: string) => setOpenSpaces((prev) => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next;
+  });
+  const toggleEpic = (key: string) => setOpenEpics((prev) => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next;
+  });
 
   if (loading) {
     return (
       <tr>
         <td colSpan={8} className="px-8 py-4 text-xs" style={{ color: t.textSubtle, background: t.cardBg2 }}>
-          Loading tasks…
+          Loading spaces…
         </td>
       </tr>
     );
   }
 
-  if (!tasks.length) {
+  if (!spaces.length) {
     return (
       <tr>
         <td colSpan={8} className="px-8 py-4 text-xs" style={{ color: t.textSubtle, background: t.cardBg2 }}>
@@ -125,49 +153,173 @@ function TaskBreakdown({
     );
   }
 
+  const statusStyle = (status: string) => {
+    switch (status) {
+      case 'approved':    return { bg: 'rgba(16,185,129,0.12)',  color: '#059669' };
+      case 'pending':     return { bg: 'rgba(245,158,11,0.12)',  color: '#d97706' };
+      case 'resubmitted': return { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' };
+      case 'rejected':    return { bg: 'rgba(239,68,68,0.12)',   color: '#dc2626' };
+      default:            return { bg: 'rgba(100,116,139,0.12)', color: '#64748b' };
+    }
+  };
+
   return (
     <tr>
       <td colSpan={8} style={{ background: t.cardBg2, padding: 0 }}>
-        <div className="px-8 py-3">
-          <table className="w-full text-xs">
-            <thead>
-              <tr>
-                {['Task', 'Title', 'Hours', 'Entries', 'Pending', 'Approved', 'Rejected'].map((h) => (
-                  <th key={h} className="py-2 pr-4 text-left font-semibold"
-                    style={{ color: t.textMuted, borderBottom: t.border, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((task) => (
-                <tr key={task.task_id} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
-                  <td className="py-2 pr-4 font-mono" style={{ color: '#7c3aed', minWidth: 90 }}>
-                    {task.task_id}
-                  </td>
-                  <td className="py-2 pr-4" style={{ color: t.text, maxWidth: 280 }}>
-                    <span className="line-clamp-1">{task.task_title}</span>
-                  </td>
-                  <td className="py-2 pr-4 font-mono font-bold" style={{ color: t.text }}>
-                    {Number(task.total_hours).toFixed(1)}h
-                  </td>
-                  <td className="py-2 pr-4 font-semibold" style={{ color: t.text }}>
-                    {Number(task.total_entries)}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <StatusPill count={Number(task.pending_count)} color="#d97706" bg="rgba(245,158,11,0.12)" />
-                  </td>
-                  <td className="py-2 pr-4">
-                    <StatusPill count={Number(task.approved_count)} color="#059669" bg="rgba(16,185,129,0.12)" />
-                  </td>
-                  <td className="py-2 pr-4">
-                    <StatusPill count={Number(task.rejected_count)} color="#dc2626" bg="rgba(239,68,68,0.12)" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="px-8 py-4 space-y-2">
+          {spaces.map((space) => {
+            const isSpaceOpen = openSpaces.has(space.space_key);
+            return (
+              <div key={space.space_key} className="rounded-lg overflow-hidden" style={{ border: t.border }}>
+
+                {/* ── Space header ── */}
+                <div
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+                  style={{ background: t.tableHead, borderBottom: isSpaceOpen ? t.border : 'none' }}
+                  onClick={() => toggleSpace(space.space_key)}
+                >
+                  <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform"
+                    style={{ color: t.textMuted, transform: isSpaceOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span className="px-2 py-0.5 rounded text-xs font-bold"
+                    style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                    {space.space_key}
+                  </span>
+                  <span className="text-sm font-semibold" style={{ color: t.text }}>
+                    {space.space_name !== space.space_key ? space.space_name : ''}
+                  </span>
+                  <div className="ml-auto flex items-center gap-3 text-xs">
+                    <span style={{ color: t.textMuted }}>
+                      <span className="font-semibold" style={{ color: t.text }}>{space.total_tasks}</span> tasks
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#059669' }}>
+                      {space.sprint_tasks} in sprint
+                    </span>
+                    <span style={{ color: t.textMuted }}>
+                      <span className="font-semibold" style={{ color: t.text }}>{space.logged_tasks}</span> logged
+                    </span>
+                    <span className="font-bold font-mono" style={{ color: t.text }}>{space.total_hours.toFixed(1)}h</span>
+                  </div>
+                </div>
+
+                {/* ── Epic list (shown when space is open) ── */}
+                {isSpaceOpen && (
+                  <div className="px-4 py-3 space-y-2">
+                    {space.epics.map((epic) => {
+                      const epicId = `${space.space_key}::${epic.epic_key ?? '__none__'}`;
+                      const isEpicOpen = openEpics.has(epicId);
+                      return (
+                        <div key={epicId} className="rounded-md overflow-hidden"
+                          style={{ border: `1px solid ${t.borderColor}55` }}>
+
+                          {/* ── Epic header ── */}
+                          <div
+                            className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none"
+                            style={{ background: 'transparent', borderBottom: isEpicOpen ? `1px solid ${t.borderColor}55` : 'none' }}
+                            onClick={() => toggleEpic(epicId)}
+                          >
+                            <svg className="w-3 h-3 flex-shrink-0 transition-transform"
+                              style={{ color: t.textMuted, transform: isEpicOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="9 18 15 12 9 6" />
+                            </svg>
+
+                            {epic.epic_key ? (
+                              <div className="flex flex-col gap-0.5">
+                                {epic.epic_name && (
+                                  <span className="text-xs" style={{ color: t.textMuted }}>{epic.epic_name}</span>
+                                )}
+                                <span className="px-2 py-0.5 rounded text-xs font-semibold w-fit"
+                                  style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
+                                  {epic.epic_key}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-xs italic" style={{ color: t.textSubtle }}>No Epic</span>
+                            )}
+
+                            <div className="ml-auto flex items-center gap-3 text-xs">
+                              <span style={{ color: t.textMuted }}>
+                                <span className="font-semibold" style={{ color: t.text }}>{epic.total_tasks}</span> tasks
+                              </span>
+                              {epic.sprint_tasks > 0 && (
+                                <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#059669' }}>
+                                  {epic.sprint_tasks} in sprint
+                                </span>
+                              )}
+                              <span style={{ color: t.textMuted }}>
+                                <span className="font-semibold" style={{ color: t.text }}>{epic.logged_tasks}</span> logged
+                              </span>
+                              <span className="font-bold font-mono" style={{ color: epic.total_hours > 0 ? t.text : t.textSubtle }}>
+                                {epic.total_hours.toFixed(1)}h
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* ── Entries table ── */}
+                          {isEpicOpen && (
+                            <div className="px-4 py-3">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr>
+                                    {['Date', 'Task', 'Title', 'Hours', 'Description', 'Status'].map((h) => (
+                                      <th key={h} className="py-1.5 pr-4 text-left font-semibold"
+                                        style={{ color: t.textMuted, borderBottom: t.border, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
+                                        {h}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {epic.entries.map((entry) => {
+                                    const ss = statusStyle(entry.status);
+                                    return (
+                                      <tr key={entry.id} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
+                                        <td className="py-2 pr-4 font-mono tabular-nums whitespace-nowrap"
+                                          style={{ color: t.textMuted, minWidth: 90 }}>
+                                          {entry.entry_date}
+                                        </td>
+                                        <td className="py-2 pr-4">
+                                          <span className="px-2 py-0.5 rounded font-semibold font-mono"
+                                            style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed', whiteSpace: 'nowrap' }}>
+                                            {entry.task_id}
+                                          </span>
+                                        </td>
+                                        <td className="py-2 pr-4 max-w-[200px]" style={{ color: t.text }}>
+                                          <span className="line-clamp-1" title={entry.task_title}>{entry.task_title}</span>
+                                        </td>
+                                        <td className="py-2 pr-4 font-mono font-bold tabular-nums whitespace-nowrap"
+                                          style={{ color: t.text }}>
+                                          {entry.hours.toFixed(1)}h
+                                        </td>
+                                        <td className="py-2 pr-4 max-w-[240px]" style={{ color: t.textMuted }}>
+                                          <span className="line-clamp-2" title={entry.work_description}>
+                                            {entry.work_description || '—'}
+                                          </span>
+                                        </td>
+                                        <td className="py-2 pr-4">
+                                          <span className="px-2 py-0.5 rounded capitalize"
+                                            style={{ background: ss.bg, color: ss.color }}>
+                                            {entry.status}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </td>
     </tr>
@@ -244,8 +396,8 @@ function ResourceSection({
             const isOpen   = expanded.has(r.user_id);
 
             return (
-              <>
-                <tr key={r.user_id}
+              <React.Fragment key={r.user_id}>
+                <tr
                   onClick={() => onToggle(r.user_id)}
                   className="cursor-pointer transition-colors"
                   style={{
@@ -326,14 +478,14 @@ function ResourceSection({
                 </tr>
 
                 {isOpen && (
-                  <TaskBreakdown
+                  <SpaceDrillDown
                     userId={r.user_id}
                     startDate={startDate}
                     endDate={endDate}
                     token={token}
                   />
                 )}
-              </>
+              </React.Fragment>
             );
           })}
         </tbody>
