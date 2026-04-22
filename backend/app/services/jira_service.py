@@ -146,14 +146,8 @@ class JiraService:
                 fields = issue.get("fields", {})
                 summary = fields.get("summary", "")
 
-                # Story points are encoded in the title as the trailing ": NUMBER"
-                # e.g. "Development: TBL_F_CUSTOMER_PROFILE Part 2 : 8"  -> sp = 8
+                # SP from Jira fields only — customfield_10016 (classic) or customfield_10028 (next-gen)
                 sp = fields.get("customfield_10016") or fields.get("customfield_10028")
-                if sp is None:
-                    import re
-                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
-                    if m:
-                        sp = float(m.group(1))
 
                 # Est. hours = SP * 8  (1 story point = 1 day = 8 hours)
                 est_hours = round(sp * 8, 2) if sp is not None else None
@@ -235,11 +229,6 @@ class JiraService:
                 summary = fields.get("summary", "")
 
                 sp = fields.get("customfield_10016") or fields.get("customfield_10028")
-                if sp is None:
-                    import re
-                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
-                    if m:
-                        sp = float(m.group(1))
 
                 est_hours = round(sp * 8, 2) if sp is not None else None
 
@@ -428,10 +417,6 @@ class JiraService:
                 summary = fields.get("summary", "")
 
                 sp = fields.get("customfield_10016") or fields.get("customfield_10028")
-                if sp is None:
-                    m = re.search(r':\s*(\d+(?:\.\d+)?)\s*$', summary)
-                    if m:
-                        sp = float(m.group(1))
                 est_hours = round(sp * 8, 2) if sp is not None else None
 
                 sprint_name = None
