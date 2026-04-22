@@ -516,13 +516,30 @@ interface EpicMember {
 }
 
 interface EpicStat {
-  epic_key: string;
+  epic_key: string | null;
   epic_name: string | null;
   total_tasks: number;
   active_sprint_tasks: number;
   total_est_hours: number | null;
   total_logged_hours: number;
   pct_complete: number | null;
+  member_count: number;
+  members: EpicMember[];
+}
+
+interface ProjectSpace {
+  space_key: string;
+  space_name: string;
+  total_epics: number;
+  member_count: number;
+  total_tasks: number;
+  sprint_tasks: number;
+  total_logged_hours: number;
+  epics: EpicStat[];
+}
+
+interface GeneralStat {
+  total_logged_hours: number;
   member_count: number;
   members: EpicMember[];
 }
@@ -556,34 +573,32 @@ function EpicRow({ epic, isOpen, onToggle }: { epic: EpicStat; isOpen: boolean; 
 
         {/* epic key + name */}
         <td className="px-5 py-4">
-          <div className="flex flex-col gap-0.5">
-            {epic.epic_name && (
-              <span className="text-xs font-medium" style={{ color: t.textMuted }}>{epic.epic_name}</span>
-            )}
-            <span className="px-2.5 py-1 rounded-md text-xs font-bold w-fit"
-              style={isGeneral
-                ? { background: 'rgba(245,158,11,0.12)', color: '#d97706' }
-                : { background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-              {epic.epic_key}
-            </span>
-          </div>
+          {epic.epic_key ? (
+            <div className="flex flex-col gap-0.5">
+              {epic.epic_name && (
+                <span className="text-xs font-medium" style={{ color: t.textMuted }}>{epic.epic_name}</span>
+              )}
+              <span className="px-2.5 py-1 rounded-md text-xs font-bold w-fit"
+                style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                {epic.epic_key}
+              </span>
+            </div>
+          ) : (
+            <span className="text-sm italic" style={{ color: t.textSubtle }}>No Epic</span>
+          )}
         </td>
 
         {/* sprint badge */}
         <td className="px-5 py-4">
-          {isGeneral ? (
-            <span style={{ color: t.textSubtle }}>—</span>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold" style={{ color: t.text }}>{epic.total_tasks} tasks</span>
-              {epic.active_sprint_tasks > 0 && (
-                <span className="px-2 py-0.5 rounded text-xs font-semibold w-fit"
-                  style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
-                  {epic.active_sprint_tasks} in sprint
-                </span>
-              )}
-            </div>
-          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold" style={{ color: t.text }}>{epic.total_tasks} tasks</span>
+            {epic.active_sprint_tasks > 0 && (
+              <span className="px-2 py-0.5 rounded text-xs font-semibold w-fit"
+                style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>
+                {epic.active_sprint_tasks} in sprint
+              </span>
+            )}
+          </div>
         </td>
 
         {/* est hours */}
@@ -730,47 +745,167 @@ function MemberBlock({ member }: { member: EpicMember }) {
   );
 }
 
+// ── Project View — Space section ──────────────────────────────────────────────
+function SpaceSection({
+  space, openEpics, onToggleEpic,
+}: {
+  space: ProjectSpace;
+  openEpics: Set<string>;
+  onToggleEpic: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
+      {/* ── Space header ── */}
+      <div
+        className="flex items-center gap-3 px-6 py-4 cursor-pointer select-none"
+        style={{ background: t.tableHead, borderBottom: open ? t.border : 'none' }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg className="w-4 h-4 flex-shrink-0 transition-transform"
+          style={{ color: t.textMuted, transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span className="px-2.5 py-1 rounded-md text-sm font-bold"
+          style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+          {space.space_key}
+        </span>
+        <span className="text-sm font-semibold" style={{ color: t.text }}>
+          {space.space_name !== space.space_key ? space.space_name : ''}
+        </span>
+        <div className="ml-auto flex items-center gap-4 text-xs">
+          <span style={{ color: t.textMuted }}>
+            <span className="font-semibold" style={{ color: t.text }}>{space.total_epics}</span> epics
+          </span>
+          <span style={{ color: t.textMuted }}>
+            <span className="font-semibold" style={{ color: t.text }}>{space.member_count}</span> members
+          </span>
+          <span style={{ color: t.textMuted }}>
+            <span className="font-semibold" style={{ color: t.text }}>{space.total_tasks}</span> tasks total
+          </span>
+          {space.sprint_tasks > 0 && (
+            <span className="px-2 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#059669' }}>
+              {space.sprint_tasks} in sprint
+            </span>
+          )}
+          <span className="font-bold font-mono text-sm" style={{ color: t.text }}>
+            {space.total_logged_hours.toFixed(1)}h
+          </span>
+        </div>
+      </div>
+
+      {/* ── Epic table (shown when space expanded) ── */}
+      {open && (
+        <table className="w-full text-sm">
+          <thead style={{ background: t.tableHead }}>
+            <tr>
+              <th className="w-8 px-4 py-3" />
+              {['Epic', 'Tasks', 'Est. Hours', 'Logged Hours', 'Progress', 'Members'].map((h) => (
+                <th key={h} className="px-5 py-3 text-left font-semibold"
+                  style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {space.epics.map((epic) => {
+              const epicId = `${space.space_key}::${epic.epic_key ?? '__none__'}`;
+              return (
+                <EpicRow
+                  key={epicId}
+                  epic={epic}
+                  isOpen={openEpics.has(epicId)}
+                  onToggle={() => onToggleEpic(epicId)}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ── General section (Holiday / Leave / Meetings) ───────────────────────────────
+function GeneralSection({ general }: { general: GeneralStat }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
+      <div
+        className="flex items-center gap-3 px-6 py-4 cursor-pointer select-none"
+        style={{ background: t.tableHead, borderBottom: open ? t.border : 'none' }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg className="w-4 h-4 flex-shrink-0 transition-transform"
+          style={{ color: t.textMuted, transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span className="text-sm font-bold" style={{ color: '#d97706' }}>General Purpose</span>
+        <span className="text-xs" style={{ color: t.textMuted }}>Holiday · Leave · Meetings · Comp Off</span>
+        <div className="ml-auto flex items-center gap-4 text-xs">
+          <span style={{ color: t.textMuted }}>
+            <span className="font-semibold" style={{ color: t.text }}>{general.member_count}</span> members
+          </span>
+          <span className="font-bold font-mono text-sm" style={{ color: t.text }}>
+            {general.total_logged_hours.toFixed(1)}h
+          </span>
+        </div>
+      </div>
+      {open && (
+        <div className="px-8 py-4 space-y-4">
+          {general.members.map((member) => (
+            <MemberBlock key={member.user_id} member={member} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Project / Epic dashboard panel ────────────────────────────────────────────
-function ProjectView({ token }: { token: string }) {
-  const [epics,      setEpics]      = useState<EpicStat[]>([]);
+function ProjectView({ token, startDate, endDate }: { token: string; startDate: string; endDate: string }) {
+  const [spaces,     setSpaces]     = useState<ProjectSpace[]>([]);
+  const [general,    setGeneral]    = useState<GeneralStat | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [sprintOnly, setSprintOnly] = useState(false);
-  const [expanded,   setExpanded]   = useState<Set<string>>(new Set());
+  const [openEpics,  setOpenEpics]  = useState<Set<string>>(new Set());
 
-  const fetchEpics = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    setExpanded(new Set());
+    setOpenEpics(new Set());
     try {
-      // No date params — logged hours are all-time in Project View
-      const url = `${API}/jira/epic-dashboard?sprint_only=${sprintOnly}`;
+      const url = `${API}/jira/epic-dashboard?sprint_only=${sprintOnly}&start_date=${startDate}&end_date=${endDate}`;
       const res = await fetch(url, { headers: aH(token) });
-      if (res.ok) setEpics((await res.json()).epics ?? []);
+      if (res.ok) {
+        const d = await res.json();
+        setSpaces(d.spaces ?? []);
+        setGeneral(d.general ?? null);
+      }
     } catch (ex) { console.error(ex); }
     finally { setLoading(false); }
-  }, [token, sprintOnly]);
+  }, [token, sprintOnly, startDate, endDate]);
 
-  useEffect(() => { fetchEpics(); }, [fetchEpics]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const toggleExpand = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
+  const toggleEpic = (id: string) => setOpenEpics((prev) => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
 
-  const projectEpics = epics.filter((e) => e.epic_key !== 'GENERAL');
-  const totalLogged  = projectEpics.reduce((s, e) => s + Number(e.total_logged_hours || 0), 0);
-  const totalEst     = projectEpics.filter((e) => e.total_est_hours != null)
-                                   .reduce((s, e) => s + Number(e.total_est_hours || 0), 0);
-  const overallPct   = totalEst > 0 ? Math.min(100, Math.round((totalLogged / totalEst) * 100)) : 0;
+  const totalLogged = spaces.reduce((s, sp) => s + sp.total_logged_hours, 0)
+                    + (general?.total_logged_hours ?? 0);
+  const totalEpics  = spaces.reduce((s, sp) => s + sp.total_epics, 0);
+  const totalEst    = spaces.reduce((s, sp) =>
+    s + sp.epics.reduce((es, e) => es + (e.total_est_hours ?? 0), 0), 0);
+  const overallPct  = totalEst > 0 ? Math.min(100, Math.round((totalLogged / totalEst) * 100)) : 0;
 
   return (
     <div className="space-y-6">
-      {/* controls row */}
+      {/* controls */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-xs px-2.5 py-1 rounded-md" style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6' }}>
-          Logged hours: all time
-        </span>
         <span className="text-xs px-2.5 py-1 rounded-md" style={{ background: 'rgba(139,92,246,0.08)', color: '#7c3aed' }}>
           Est = SP × 8h + 20% buffer
         </span>
@@ -782,7 +917,7 @@ function ProjectView({ token }: { token: string }) {
             : { border: t.border, color: t.textMuted, background: 'transparent' }}>
           {sprintOnly ? 'Sprint Only' : 'All Tasks'}
         </button>
-        <button onClick={fetchEpics}
+        <button onClick={fetchData}
           className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
           style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
           Refresh
@@ -792,9 +927,9 @@ function ProjectView({ token }: { token: string }) {
       {/* summary cards */}
       <div className="grid grid-cols-3 gap-5">
         {[
-          { title: 'Active Epics / Projects', value: epics.filter((e) => e.epic_key !== 'GENERAL').length, color: 'rgba(59,130,246,0.15)' },
-          { title: 'Total Hours Logged',       value: `${totalLogged.toFixed(1)}h`,                        color: 'rgba(139,92,246,0.15)' },
-          { title: 'Overall Progress',         value: `${overallPct}%`,                                    color: 'rgba(16,185,129,0.15)' },
+          { title: 'Active Spaces',      value: spaces.length,            color: 'rgba(59,130,246,0.15)'  },
+          { title: 'Total Epics',        value: totalEpics,               color: 'rgba(139,92,246,0.15)'  },
+          { title: 'Hours Logged',       value: `${totalLogged.toFixed(1)}h`, color: 'rgba(16,185,129,0.15)' },
         ].map((s) => (
           <div key={s.title} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
             <p className="text-sm font-medium mb-2" style={{ color: t.textMuted }}>{s.title}</p>
@@ -803,49 +938,26 @@ function ProjectView({ token }: { token: string }) {
         ))}
       </div>
 
-      {/* epic table */}
+      {/* space sections */}
       {loading ? (
         <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
           Loading project data…
         </div>
-      ) : epics.length === 0 ? (
+      ) : spaces.length === 0 && !general ? (
         <div className="text-center py-16 rounded-xl" style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
-          No epics found.
+          No data for this period.
         </div>
       ) : (
-        <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
-          <div className="px-6 py-3 flex items-center gap-2" style={{ borderBottom: t.border, background: t.tableHead }}>
-            <h4 className="text-sm font-bold uppercase tracking-wider" style={{ color: t.textHeader }}>
-              Project (Epic) Breakdown
-            </h4>
-            <span className="px-2 py-0.5 rounded-full text-xs font-bold"
-              style={{ background: 'rgba(100,116,139,0.15)', color: t.textMuted }}>
-              {epics.length}
-            </span>
-          </div>
-          <table className="w-full text-sm">
-            <thead style={{ background: t.tableHead }}>
-              <tr>
-                <th className="w-8 px-4 py-3" />
-                {['Project / Epic', 'Tasks', 'Est. Hours', 'Logged Hours', 'Progress', 'Members'].map((h) => (
-                  <th key={h} className="px-5 py-3 text-left font-semibold"
-                    style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {epics.map((epic) => (
-                <EpicRow
-                  key={epic.epic_key}
-                  epic={epic}
-                  isOpen={expanded.has(epic.epic_key)}
-                  onToggle={() => toggleExpand(epic.epic_key)}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {spaces.map((space) => (
+            <SpaceSection
+              key={space.space_key}
+              space={space}
+              openEpics={openEpics}
+              onToggleEpic={toggleEpic}
+            />
+          ))}
+          {general && <GeneralSection general={general} />}
         </div>
       )}
     </div>
@@ -985,7 +1097,7 @@ export default function ReportsPage() {
 
         {/* ── Project View ── */}
         {activeTab === 'project' ? (
-          <ProjectView token={token} />
+          <ProjectView token={token} startDate={startDate} endDate={endDate} />
         ) : (
           <>
             {/* ── Date range label ── */}
