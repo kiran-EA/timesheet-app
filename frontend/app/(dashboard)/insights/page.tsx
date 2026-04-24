@@ -128,14 +128,16 @@ function ApprovalDonut({ data }: { data: StatusRow[] }) {
   const total = data.reduce((s, r) => s + r.entry_count, 0);
   const RADIAN = Math.PI / 180;
   const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: {
-    cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number;
+    cx?: number; cy?: number; midAngle?: number; innerRadius?: number; outerRadius?: number; percent?: number;
   }) => {
-    if (percent < 0.05) return null;
-    const r = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const _cx = cx ?? 0, _cy = cy ?? 0, _mid = midAngle ?? 0;
+    const _inner = innerRadius ?? 0, _outer = outerRadius ?? 0, _pct = percent ?? 0;
+    if (_pct < 0.05) return null;
+    const r = _inner + (_outer - _inner) * 0.5;
     return (
-      <text x={cx + r * Math.cos(-midAngle * RADIAN)} y={cy + r * Math.sin(-midAngle * RADIAN)}
+      <text x={_cx + r * Math.cos(-_mid * RADIAN)} y={_cy + r * Math.sin(-_mid * RADIAN)}
         fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
-        {`${(percent * 100).toFixed(0)}%`}
+        {`${(_pct * 100).toFixed(0)}%`}
       </text>
     );
   };
