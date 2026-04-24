@@ -571,7 +571,7 @@ def get_my_calendar_data(user_id: str, year: int, month: int) -> list:
         FROM timesheet_entries
         WHERE user_id = %s
           AND entry_date BETWEEN %s AND %s
-          AND status IN ('approved', 'pending', 'resubmitted')
+          AND status IN ('approved', 'pending', 'resubmitted', 'draft')
         GROUP BY entry_date, SPLIT_PART(task_id, '-', 1)
         ORDER BY entry_date
     """, (user_id, start, end), fetch_all=True) or []

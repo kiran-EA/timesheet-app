@@ -278,6 +278,7 @@ export default function MyAnalyticsPage() {
   const [calData, setCalData] = useState<CalendarData | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
@@ -285,10 +286,12 @@ export default function MyAnalyticsPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`${API}/timesheet/my-calendar?year=${year}&month=${month}`, { headers: aH(token) });
       if (res.ok) setCalData(await res.json());
-    } catch (ex) { console.error(ex); }
+      else setError(`API error ${res.status}: ${await res.text()}`);
+    } catch (ex) { setError(String(ex)); }
     finally { setLoading(false); }
   }, [token, year, month]);
 
@@ -346,6 +349,11 @@ export default function MyAnalyticsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+            {error}
+          </div>
+        )}
         {!mounted || loading ? (
           <div className="flex items-center justify-center h-64 rounded-xl"
             style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>

@@ -98,8 +98,8 @@ function Card({ title, subtitle, children, fullWidth }: {
 
 // ── 1. Hours Over Time (Area) ─────────────────────────────────────────────────
 function HoursOverTime({ data }: { data: DailyHour[] }) {
-  const fmt = (d: string) => {
-    const dt = new Date(d + 'T00:00:00');
+  const fmt = (d: unknown) => {
+    const dt = new Date(String(d ?? '') + 'T00:00:00');
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
   return (
@@ -404,10 +404,10 @@ export default function InsightsPage() {
         )}
 
         {/* Space filter pills */}
-        {data && data.available_spaces.length > 0 && (
+        {data && (data.available_spaces?.length ?? 0) > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold" style={{ color: t.textMuted }}>Space:</span>
-            {['all', ...data.available_spaces].map((sk) => (
+            {['all', ...(data.available_spaces ?? [])].map((sk) => (
               <button key={sk}
                 onClick={() => setSpaceFilter(sk)}
                 className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
