@@ -152,3 +152,30 @@ async def get_stats(
     week_end = week_start + timedelta(days=6)
     week_hours = queries.get_week_hours(user_id, str(week_start), str(week_end))
     return {"week_hours": week_hours}
+
+
+@router.get("/my-calendar")
+async def get_my_calendar(
+    year:  int = None,
+    month: int = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Calendar view: per-day hours + space breakdown for the current user."""
+    from datetime import date as dt
+    today = dt.today()
+    y = year  or today.year
+    m = month or today.month
+    rows = queries.get_my_calendar_data(current_user["sub"], y, m)
+
+    # Aggregate: { date -> { total, spaces: {space_key: hours} } }
+    day_map: dict = {}
+    for r in rows:
+        d = str(r["date"])
+        if d not in day_map:
+            day_map[d] = {"date": d, "total_hours": 0.0, "spaces": {}}
+        day_map[d]["total_hours"] = round(day_map[d]["total_hours"] + float(r["hours"]), 2)
+        day_map[d]["spaces"][r["space_key"]] = round(
+            day_map[d]["spaces"].get(r["space_key"], 0.0) + float(r["hours"]), 2
+        )
+
+    return {"year": y, "month": m, "days": list(day_map.values())}

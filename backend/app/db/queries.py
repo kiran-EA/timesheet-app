@@ -462,9 +462,17 @@ def get_user_task_entries_in_range(user_id: str, task_id: str, start_date: str, 
 
 # ── Dashboard Insights queries ─────────────────────────────────────────────────
 
-def get_insights_user_hours(start_date: str, end_date: str) -> list:
+def _space_clause(space_key):
+    """Return (extra_sql, extra_params) for optional Jira-space filtering."""
+    if space_key:
+        return "AND SPLIT_PART(te.task_id, '-', 1) = %s", (space_key,)
+    return "", ()
+
+
+def get_insights_user_hours(start_date: str, end_date: str, space_key: str = None) -> list:
     """Per-user hours breakdown for utilization + top contributors charts."""
-    return execute_query("""
+    sc, sp = _space_clause(space_key)
+    return execute_query(f"""
         SELECT u.user_id, u.full_name, u.avatar, u.role,
                COALESCE(SUM(CASE WHEN te.status IN ('approved','pending','resubmitted') THEN te.hours ELSE 0 END), 0) AS total_hours,
                COALESCE(SUM(CASE WHEN te.status = 'approved' THEN te.hours ELSE 0 END), 0) AS approved_hours,
@@ -473,43 +481,51 @@ def get_insights_user_hours(start_date: str, end_date: str) -> list:
                COUNT(CASE WHEN te.status = 'resubmitted' THEN 1 END) AS resubmitted_count
         FROM users u
         LEFT JOIN timesheet_entries te
-               ON te.user_id = u.user_id AND te.entry_date BETWEEN %s AND %s
+               ON te.user_id = u.user_id AND te.entry_date BETWEEN %s AND %s {sc}
         WHERE u.is_active = true
         GROUP BY u.user_id, u.full_name, u.avatar, u.role
         ORDER BY total_hours DESC
-    """, (start_date, end_date), fetch_all=True) or []
+    """, (start_date, end_date) + sp, fetch_all=True) or []
 
 
-def get_insights_daily_hours(start_date: str, end_date: str) -> list:
+def get_insights_daily_hours(start_date: str, end_date: str, space_key: str = None) -> list:
     """Daily total hours logged across the team — hours-over-time line chart."""
-    return execute_query("""
+    sc, sp = _space_clause(space_key)
+    sc2 = sc.replace("te.", "") if sc else ""
+    return execute_query(f"""
         SELECT entry_date::text AS date,
                COALESCE(SUM(hours), 0) AS total_hours,
                COUNT(DISTINCT user_id) AS active_members
         FROM timesheet_entries
         WHERE entry_date BETWEEN %s AND %s
           AND status IN ('approved', 'pending', 'resubmitted')
+          {sc2}
         GROUP BY entry_date
         ORDER BY entry_date
-    """, (start_date, end_date), fetch_all=True) or []
+    """, (start_date, end_date) + sp, fetch_all=True) or []
 
 
-def get_insights_status_breakdown(start_date: str, end_date: str) -> list:
+def get_insights_status_breakdown(start_date: str, end_date: str, space_key: str = None) -> list:
     """Entry counts and hours by status — approval donut chart."""
-    return execute_query("""
+    sc, sp = _space_clause(space_key)
+    sc2 = sc.replace("te.", "") if sc else ""
+    return execute_query(f"""
         SELECT status,
                COUNT(*)                   AS entry_count,
                COALESCE(SUM(hours), 0)    AS total_hours
         FROM timesheet_entries
         WHERE entry_date BETWEEN %s AND %s
+          {sc2}
         GROUP BY status
         ORDER BY entry_count DESC
-    """, (start_date, end_date), fetch_all=True) or []
+    """, (start_date, end_date) + sp, fetch_all=True) or []
 
 
-def get_insights_space_hours(start_date: str, end_date: str) -> list:
+def get_insights_space_hours(start_date: str, end_date: str, space_key: str = None) -> list:
     """Hours per Jira project space — space distribution bar chart."""
-    return execute_query("""
+    sc, sp = _space_clause(space_key)
+    sc2 = sc.replace("te.", "") if sc else ""
+    return execute_query(f"""
         SELECT SPLIT_PART(task_id, '-', 1) AS space_key,
                COALESCE(SUM(hours), 0)     AS total_hours,
                COUNT(DISTINCT user_id)     AS member_count,
@@ -518,21 +534,41 @@ def get_insights_space_hours(start_date: str, end_date: str) -> list:
         WHERE entry_date BETWEEN %s AND %s
           AND status IN ('approved', 'pending', 'resubmitted')
           AND task_id ~ '^[A-Z]'
+          {sc2}
         GROUP BY space_key
         ORDER BY total_hours DESC
         LIMIT 12
-    """, (start_date, end_date), fetch_all=True) or []
+    """, (start_date, end_date) + sp, fetch_all=True) or []
 
 
-def get_insights_dow_pattern(start_date: str, end_date: str) -> list:
+def get_insights_dow_pattern(start_date: str, end_date: str, space_key: str = None) -> list:
     """Hours by day-of-week (1=Mon … 7=Sun) — logging pattern chart."""
-    return execute_query("""
+    sc, sp = _space_clause(space_key)
+    sc2 = sc.replace("te.", "") if sc else ""
+    return execute_query(f"""
         SELECT EXTRACT(ISODOW FROM entry_date)::int AS dow,
                COALESCE(SUM(hours), 0)              AS total_hours,
                COUNT(*)                             AS entry_count
         FROM timesheet_entries
         WHERE entry_date BETWEEN %s AND %s
           AND status IN ('approved', 'pending', 'resubmitted')
+          {sc2}
         GROUP BY dow
         ORDER BY dow
-    """, (start_date, end_date), fetch_all=True) or []
+    """, (start_date, end_date) + sp, fetch_all=True) or []
+
+
+def get_my_calendar_data(user_id: str, year: int, month: int) -> list:
+    """Per-day hours + space breakdown for resource calendar view."""
+    return execute_query("""
+        SELECT entry_date::text                    AS date,
+               SPLIT_PART(task_id, '-', 1)        AS space_key,
+               COALESCE(SUM(hours), 0)             AS hours
+        FROM timesheet_entries
+        WHERE user_id = %s
+          AND EXTRACT(YEAR  FROM entry_date) = %s
+          AND EXTRACT(MONTH FROM entry_date) = %s
+          AND status IN ('approved', 'pending', 'resubmitted')
+        GROUP BY entry_date, SPLIT_PART(task_id, '-', 1)
+        ORDER BY entry_date
+    """, (user_id, year, month), fetch_all=True) or []

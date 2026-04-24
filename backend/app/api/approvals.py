@@ -89,17 +89,19 @@ async def get_analytics(
 async def get_insights(
     start_date: str = Query(...),
     end_date: str   = Query(...),
+    space_key: Optional[str] = Query(None, description="Filter to a single Jira space, e.g. 'EA'. Omit for all spaces."),
     current_user: dict = Depends(get_current_user),
 ):
     """Admin-only: all chart data for the Dashboard Insights page in one call."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    user_hours   = queries.get_insights_user_hours(start_date, end_date)
-    daily_hours  = queries.get_insights_daily_hours(start_date, end_date)
-    status_breakdown = queries.get_insights_status_breakdown(start_date, end_date)
-    space_hours  = queries.get_insights_space_hours(start_date, end_date)
-    dow_pattern  = queries.get_insights_dow_pattern(start_date, end_date)
+    sk = space_key or None
+    user_hours       = queries.get_insights_user_hours(start_date, end_date, sk)
+    daily_hours      = queries.get_insights_daily_hours(start_date, end_date, sk)
+    status_breakdown = queries.get_insights_status_breakdown(start_date, end_date, sk)
+    space_hours      = queries.get_insights_space_hours(start_date, end_date, sk)
+    dow_pattern      = queries.get_insights_dow_pattern(start_date, end_date, sk)
 
     return {
         "user_hours":       [dict(r) for r in user_hours],
@@ -107,6 +109,7 @@ async def get_insights(
         "status_breakdown": [dict(r) for r in status_breakdown],
         "space_hours":      [dict(r) for r in space_hours],
         "dow_pattern":      [dict(r) for r in dow_pattern],
+        "available_spaces": sorted({dict(r)["space_key"] for r in queries.get_insights_space_hours(start_date, end_date)}),
     }
 
 

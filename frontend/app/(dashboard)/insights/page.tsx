@@ -19,6 +19,7 @@ interface InsightsData {
   status_breakdown: StatusRow[];
   space_hours:      SpaceHour[];
   dow_pattern:      DowRow[];
+  available_spaces: string[];
 }
 let _cache: { data: InsightsData; fetchedAt: Date; key: string } | null = null;
 
@@ -278,14 +279,15 @@ export default function InsightsPage() {
   const user   = useAuthStore((s) => s.user);
   const router = useRouter();
 
-  const [preset,    setPreset]    = useState<Preset>('month');
-  const [startDate, setStartDate] = useState(getMonthRange().start);
-  const [endDate,   setEndDate]   = useState(getMonthRange().end);
-  const [data,      setData]      = useState<InsightsData | null>(null);
-  const [loading,   setLoading]   = useState(false);
-  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
-  const [error,     setError]     = useState<string | null>(null);
-  const [mounted,   setMounted]   = useState(false);
+  const [preset,     setPreset]     = useState<Preset>('month');
+  const [startDate,  setStartDate]  = useState(getMonthRange().start);
+  const [endDate,    setEndDate]    = useState(getMonthRange().end);
+  const [spaceFilter, setSpaceFilter] = useState<string>('all');
+  const [data,       setData]       = useState<InsightsData | null>(null);
+  const [loading,    setLoading]    = useState(false);
+  const [fetchedAt,  setFetchedAt]  = useState<Date | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
+  const [mounted,    setMounted]    = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -293,7 +295,7 @@ export default function InsightsPage() {
     if (user && user.role !== 'admin') router.push('/timesheet');
   }, [user, router]);
 
-  const cacheKey = `${startDate}|${endDate}`;
+  const cacheKey = `${startDate}|${endDate}|${spaceFilter}`;
 
   const fetchData = useCallback(async (force = false) => {
     if (!force && _cache && _cache.key === cacheKey) {
@@ -304,8 +306,9 @@ export default function InsightsPage() {
     setLoading(true);
     setError(null);
     try {
+      const spaceParam = spaceFilter !== 'all' ? `&space_key=${spaceFilter}` : '';
       const res = await fetch(
-        `${API}/approvals/insights?start_date=${startDate}&end_date=${endDate}`,
+        `${API}/approvals/insights?start_date=${startDate}&end_date=${endDate}${spaceParam}`,
         { headers: aH(token) },
       );
       if (res.ok) {
@@ -322,7 +325,7 @@ export default function InsightsPage() {
       setError(ex instanceof Error ? ex.message : 'Network error — is the backend running?');
     }
     finally { setLoading(false); }
-  }, [token, startDate, endDate, cacheKey]);
+  }, [token, startDate, endDate, spaceFilter, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -397,6 +400,23 @@ export default function InsightsPage() {
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
               className="px-3 py-2 rounded-lg text-sm focus:outline-none"
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
+          </div>
+        )}
+
+        {/* Space filter pills */}
+        {data && data.available_spaces.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold" style={{ color: t.textMuted }}>Space:</span>
+            {['all', ...data.available_spaces].map((sk) => (
+              <button key={sk}
+                onClick={() => setSpaceFilter(sk)}
+                className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                style={spaceFilter === sk
+                  ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                  : { background: 'rgba(100,116,139,0.12)', color: t.textMuted, border: t.border }}>
+                {sk === 'all' ? 'All Spaces' : sk}
+              </button>
+            ))}
           </div>
         )}
 
