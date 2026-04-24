@@ -258,7 +258,7 @@ function DowPattern({ data }: { data: DowRow[] }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
           <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 12 }} tickLine={false} axisLine={false} />
           <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}h`, 'Hours']} />
+          <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`${Number(v ?? 0).toFixed(1)}h`, 'Hours']} />
           <Bar dataKey="total_hours" radius={[4, 4, 0, 0]} maxBarSize={48}>
             {allDows.map((d, i) => (
               <Cell key={i} fill={
