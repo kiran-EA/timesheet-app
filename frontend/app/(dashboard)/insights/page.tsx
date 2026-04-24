@@ -284,6 +284,10 @@ export default function InsightsPage() {
   const [data,      setData]      = useState<InsightsData | null>(null);
   const [loading,   setLoading]   = useState(false);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
+  const [mounted,   setMounted]   = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (user && user.role !== 'admin') router.push('/timesheet');
@@ -298,6 +302,7 @@ export default function InsightsPage() {
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(
         `${API}/approvals/insights?start_date=${startDate}&end_date=${endDate}`,
@@ -309,8 +314,13 @@ export default function InsightsPage() {
         _cache = { data: d, fetchedAt: now, key: cacheKey };
         setData(d);
         setFetchedAt(now);
+      } else {
+        const msg = await res.text().catch(() => `HTTP ${res.status}`);
+        setError(`API error ${res.status}: ${msg.slice(0, 120)}`);
       }
-    } catch (ex) { console.error(ex); }
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Network error — is the backend running?');
+    }
     finally { setLoading(false); }
   }, [token, startDate, endDate, cacheKey]);
 
@@ -390,7 +400,18 @@ export default function InsightsPage() {
           </div>
         )}
 
-        {loading && !data ? (
+        {/* Error state */}
+        {error && (
+          <div className="px-4 py-3 rounded-lg text-sm font-medium flex items-center gap-2"
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#dc2626' }}>
+            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            {error}
+          </div>
+        )}
+
+        {!mounted || (loading && !data) ? (
           <div className="flex items-center justify-center h-64 rounded-xl"
             style={{ background: t.cardBg, border: t.border, color: t.textSubtle }}>
             <div className="text-center space-y-3">
