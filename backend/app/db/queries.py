@@ -560,15 +560,18 @@ def get_insights_dow_pattern(start_date: str, end_date: str, space_key: str = No
 
 def get_my_calendar_data(user_id: str, year: int, month: int) -> list:
     """Per-day hours + space breakdown for resource calendar view."""
+    import calendar as _cal
+    last_day = _cal.monthrange(year, month)[1]
+    start = f"{year}-{month:02d}-01"
+    end   = f"{year}-{month:02d}-{last_day:02d}"
     return execute_query("""
         SELECT entry_date::text                    AS date,
                SPLIT_PART(task_id, '-', 1)        AS space_key,
                COALESCE(SUM(hours), 0)             AS hours
         FROM timesheet_entries
         WHERE user_id = %s
-          AND EXTRACT(YEAR  FROM entry_date) = %s
-          AND EXTRACT(MONTH FROM entry_date) = %s
+          AND entry_date BETWEEN %s AND %s
           AND status IN ('approved', 'pending', 'resubmitted')
         GROUP BY entry_date, SPLIT_PART(task_id, '-', 1)
         ORDER BY entry_date
-    """, (user_id, year, month), fetch_all=True) or []
+    """, (user_id, start, end), fetch_all=True) or []
