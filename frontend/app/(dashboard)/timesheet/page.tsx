@@ -618,9 +618,9 @@ export default function TimesheetPage() {
         {/* ── Stats ────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-5">
           {[
-            { title: 'This Week',       value: `${activeWeekHours}h`,        icon: '🕐', color: 'rgba(59,130,246,0.15)'  },
-            { title: 'Tasks Active',    value: `${activeTasks.length}`,      icon: '📋', color: 'rgba(139,92,246,0.15)' },
-            { title: "Today's Hours",   value: `${totalDayHours}h`,          icon: '⏱️',  color: 'rgba(16,185,129,0.15)' },
+            { title: 'This Week',       value: `${Number(activeWeekHours).toFixed(1)}h`,   icon: '🕐', color: 'rgba(59,130,246,0.15)'  },
+            { title: 'Tasks Active',    value: `${activeTasks.length}`,                    icon: '📋', color: 'rgba(139,92,246,0.15)' },
+            { title: "Today's Hours",   value: `${Number(totalDayHours).toFixed(1)}h`,    icon: '⏱️',  color: 'rgba(16,185,129,0.15)' },
             { title: "Today's Entries", value: `${activeEntries.length}`,    icon: '📝', color: 'rgba(245,158,11,0.15)' },
           ].map((s) => (
             <div key={s.title} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
