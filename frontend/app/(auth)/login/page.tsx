@@ -72,7 +72,7 @@ export default function LoginPage() {
           >
             📊
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">TimeSync</h1>
+          <h1 className="text-3xl font-bold text-white mb-1">Timesheet App</h1>
           <p style={{ color: '#94a3b8' }} className="text-sm">Express Analytics</p>
         </div>
 

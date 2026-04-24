@@ -106,8 +106,8 @@ interface SpaceData {
 }
 
 // ── Resource View drill-down: Space → Epic → Entries ──────────────────────────
-function SpaceDrillDown({ userId, startDate, endDate, token }: {
-  userId: string; startDate: string; endDate: string; token: string;
+function SpaceDrillDown({ userId, startDate, endDate, token, sprintOnly }: {
+  userId: string; startDate: string; endDate: string; token: string; sprintOnly: boolean;
 }) {
   const [spaces,     setSpaces]     = useState<SpaceData[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -117,14 +117,14 @@ function SpaceDrillDown({ userId, startDate, endDate, token }: {
   useEffect(() => {
     setLoading(true);
     fetch(
-      `${API}/jira/user-spaces?user_id=${userId}&start_date=${startDate}&end_date=${endDate}`,
+      `${API}/jira/user-spaces?user_id=${userId}&start_date=${startDate}&end_date=${endDate}&sprint_only=${sprintOnly}`,
       { headers: aH(token) },
     )
       .then((r) => r.ok ? r.json() : { spaces: [] })
       .then((d) => setSpaces(d.spaces ?? []))
       .catch(() => setSpaces([]))
       .finally(() => setLoading(false));
-  }, [userId, startDate, endDate, token]);
+  }, [userId, startDate, endDate, token, sprintOnly]);
 
   const toggleSpace = (key: string) => setOpenSpaces((prev) => {
     const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next;
@@ -344,7 +344,7 @@ function RoleBadge({ role }: { role: string }) {
 
 // ── resource table section (by role group) ─────────────────────────────────────
 function ResourceSection({
-  title, rows, expanded, targetHours, startDate, endDate, token, onToggle,
+  title, rows, expanded, targetHours, startDate, endDate, token, sprintOnly, onToggle,
 }: {
   title: string;
   rows: ResourceStat[];
@@ -353,6 +353,7 @@ function ResourceSection({
   startDate: string;
   endDate: string;
   token: string;
+  sprintOnly: boolean;
   onToggle: (uid: string) => void;
 }) {
   if (rows.length === 0) return null;
@@ -483,6 +484,7 @@ function ResourceSection({
                     startDate={startDate}
                     endDate={endDate}
                     token={token}
+                    sprintOnly={sprintOnly}
                   />
                 )}
               </React.Fragment>
@@ -512,6 +514,8 @@ interface EpicMember {
   avatar: string;
   role: string;
   total_logged: number;
+  total_tasks: number;
+  sprint_tasks: number;
   tasks: EpicMemberTask[];
 }
 
@@ -545,7 +549,12 @@ interface GeneralStat {
 }
 
 // ── Epic row (expandable) ──────────────────────────────────────────────────────
-function EpicRow({ epic, isOpen, onToggle }: { epic: EpicStat; isOpen: boolean; onToggle: () => void }) {
+function EpicRow({ epic, isOpen, onToggle, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate }: {
+  epic: EpicStat; isOpen: boolean; onToggle: () => void;
+  openMembers: Set<string>; onToggleMember: (id: string) => void;
+  openTasks: Set<string>; onToggleTask: (id: string) => void;
+  token: string; startDate: string; endDate: string;
+}) {
   const logged  = Number(epic.total_logged_hours || 0);
   const est     = epic.total_est_hours != null ? Number(epic.total_est_hours) : null;
   const pct     = epic.pct_complete ?? (est && est > 0 ? Math.min(100, Math.round((logged / est) * 100)) : 0);
@@ -640,7 +649,17 @@ function EpicRow({ epic, isOpen, onToggle }: { epic: EpicStat; isOpen: boolean; 
                 <p className="text-sm" style={{ color: t.textSubtle }}>No members assigned.</p>
               ) : (
                 epic.members.map((member) => (
-                  <MemberBlock key={member.user_id} member={member} />
+                  <MemberRow
+                    key={member.user_id}
+                    member={member}
+                    isOpen={openMembers.has(member.user_id)}
+                    onToggle={() => onToggleMember(member.user_id)}
+                    openTasks={openTasks}
+                    onToggleTask={onToggleTask}
+                    token={token}
+                    startDate={startDate}
+                    endDate={endDate}
+                  />
                 ))
               )}
             </div>
@@ -651,12 +670,163 @@ function EpicRow({ epic, isOpen, onToggle }: { epic: EpicStat; isOpen: boolean; 
   );
 }
 
-// ── Member block inside expanded epic ─────────────────────────────────────────
-function MemberBlock({ member }: { member: EpicMember }) {
+// ── Level 5: Individual Task Entries (fetches its own data) ────────────────
+interface TaskEntry {
+  id: string;
+  entry_date: string;
+  work_description: string;
+  hours: number;
+  status: string;
+}
+
+function TaskEntries({ taskId, memberId, token, startDate, endDate }: {
+  taskId: string; memberId: string; token: string; startDate: string; endDate: string;
+}) {
+  const [entries, setEntries] = useState<TaskEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const url = `${API}/jira/task-entries?task_id=${taskId}&user_id=${memberId}&start_date=${startDate}&end_date=${endDate}`;
+    fetch(url, { headers: aH(token) })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setEntries(data))
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
+  }, [taskId, memberId, token, startDate, endDate]);
+
+  if (loading) {
+    return <div className="px-6 py-3 text-xs" style={{ color: t.textSubtle }}>Loading entries...</div>;
+  }
+  if (entries.length === 0) {
+    return <div className="px-6 py-3 text-xs text-center" style={{ color: t.textSubtle }}>No individual entries found for this task in the selected period.</div>;
+  }
+
+  const statusStyle = (status: string) => {
+    switch (status) {
+      case 'approved':    return { bg: 'rgba(16,185,129,0.12)',  color: '#059669' };
+      case 'pending':     return { bg: 'rgba(245,158,11,0.12)',  color: '#d97706' };
+      case 'resubmitted': return { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' };
+      case 'rejected':    return { bg: 'rgba(239,68,68,0.12)',   color: '#dc2626' };
+      default:            return { bg: 'rgba(100,116,139,0.12)', color: '#64748b' };
+    }
+  };
+
+  return (
+    <div className="px-6 pb-3">
+      <table className="w-full text-xs">
+        <thead>
+          <tr>
+            {['Date', 'Description', 'Hours', 'Status'].map((h) => (
+              <th key={h} className="py-1.5 pr-4 text-left font-semibold"
+                style={{ color: t.textMuted, borderBottom: `1px solid ${t.borderColor}55`, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => {
+            const ss = statusStyle(entry.status);
+            return (
+              <tr key={entry.id} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
+                <td className="py-2 pr-4 font-mono tabular-nums whitespace-nowrap" style={{ color: t.textMuted }}>
+                  {entry.entry_date}
+                </td>
+                <td className="py-2 pr-4 max-w-[240px]" style={{ color: t.textMuted }}>
+                  <span className="line-clamp-2" title={entry.work_description}>
+                    {entry.work_description || '—'}
+                  </span>
+                </td>
+                <td className="py-2 pr-4 font-mono font-bold tabular-nums whitespace-nowrap" style={{ color: t.text }}>
+                  {entry.hours.toFixed(1)}h
+                </td>
+                <td className="py-2 pr-4">
+                  <span className="px-2 py-0.5 rounded capitalize text-xs" style={{ background: ss.bg, color: ss.color }}>
+                    {entry.status}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Level 4: Task Row (expandable to show entries) ─────────────────────────
+function TaskRow({ task, memberId, isOpen, onToggle, token, startDate, endDate }: {
+  task: EpicMemberTask;
+  memberId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  token: string;
+  startDate: string;
+  endDate: string;
+}) {
+  return (
+    <div className="rounded-md overflow-hidden" style={{ border: `1px solid ${t.borderColor}44`, background: `${t.cardBg}88` }}>
+      <div
+        onClick={onToggle}
+        className="flex items-center gap-3 px-3 py-2 cursor-pointer select-none"
+        style={{ borderBottom: isOpen ? `1px solid ${t.borderColor}44` : 'none' }}
+      >
+        <svg className="w-3 h-3 flex-shrink-0 transition-transform"
+          style={{ color: t.textMuted, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}>
+          {task.key}
+        </span>
+        <span className="text-xs flex-1" style={{ color: t.text }} title={task.title}>
+          {task.title}
+        </span>
+        <span className="px-2 py-0.5 rounded text-xs" style={{
+          background: task.status === 'In Progress' ? 'rgba(59,130,246,0.12)' : task.status === 'Done' ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+          color: task.status === 'In Progress' ? '#3b82f6' : task.status === 'Done' ? '#059669' : t.textMuted,
+        }}>
+          {task.status}
+        </span>
+        <span className="ml-2 text-xs font-bold font-mono px-2 py-1 rounded-md"
+          style={{ background: task.logged_hours > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(100,116,139,0.1)', color: task.logged_hours > 0 ? '#059669' : t.textMuted }}>
+          {task.logged_hours.toFixed(1)}h logged
+        </span>
+      </div>
+
+      {isOpen && (
+        <TaskEntries
+          taskId={task.key}
+          memberId={memberId}
+          token={token}
+          startDate={startDate}
+          endDate={endDate}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Member row inside expanded epic (now also expandable) ───────────────────
+function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, startDate, endDate }: {
+  member: EpicMember; isOpen: boolean; onToggle: () => void;
+  openTasks: Set<string>; onToggleTask: (id: string) => void;
+  token: string; startDate: string; endDate: string;
+}) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
-      {/* member header */}
-      <div className="flex items-center gap-3 px-4 py-3" style={{ background: t.tableHead, borderBottom: t.border }}>
+      {/* member header (clickable) */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+        style={{ background: t.tableHead, borderBottom: isOpen ? t.border : 'none' }}
+        onClick={onToggle}
+      >
+        <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform"
+          style={{ color: t.textMuted, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
           style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
           {member.avatar || member.full_name[0]}
@@ -666,80 +836,41 @@ function MemberBlock({ member }: { member: EpicMember }) {
           <p className="text-xs" style={{ color: t.textSubtle }}>{member.email}</p>
         </div>
         <RoleBadge role={member.role} />
+        <span className="ml-2 text-xs" style={{ color: t.textMuted }}>
+          <strong style={{ color: t.text }}>{member.tasks?.length ?? 0}</strong> tasks
+        </span>
+        <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#059669' }}>
+          <strong>{member.tasks?.filter(t => t.is_active_sprint).length ?? 0}</strong> in sprint
+        </span>
         <span className="ml-2 text-sm font-bold font-mono px-3 py-1 rounded-lg"
           style={{ background: member.total_logged > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.1)', color: member.total_logged > 0 ? '#059669' : t.textMuted }}>
           {member.total_logged.toFixed(1)}h logged
         </span>
       </div>
 
-      {/* task table */}
-      {member.tasks.length > 0 && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr>
-              {['Task', 'Title', 'Sprint', 'Est. Hours', 'Logged', 'Progress', 'Status'].map((h) => (
-                <th key={h} className="px-4 py-2 text-left font-semibold"
-                  style={{ color: t.textMuted, borderBottom: t.border, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.4px' }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {member.tasks.map((task) => {
-              const pct = task.est_hours && task.est_hours > 0
-                ? Math.min(100, Math.round((task.logged_hours / task.est_hours) * 100)) : 0;
-              const barC = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f59e0b' : '#10b981';
+      {/* expanded view: list of expandable tasks */}
+      {isOpen && (
+        <div className="p-4 space-y-2" style={{ background: 'rgba(0,0,0,0.1)' }}>
+          {member.tasks.length > 0 ? (
+            member.tasks.map((task) => {
+              const taskId = `${member.user_id}::${task.key}`;
               return (
-                <tr key={task.key} style={{ borderBottom: `1px solid ${t.borderColor}22` }}>
-                  <td className="px-4 py-2.5">
-                    <span className="px-2 py-0.5 rounded text-xs font-semibold"
-                      style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-                      {task.key}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 max-w-[260px]" style={{ color: t.text }}>
-                    <span className="line-clamp-1" title={task.title}>{task.title}</span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {task.is_active_sprint ? (
-                      <span className="px-2 py-0.5 rounded text-xs font-semibold"
-                        style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>Active</span>
-                    ) : (
-                      <span style={{ color: t.textSubtle }}>Backlog</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono" style={{ color: t.textMuted }}>
-                    {task.est_hours != null ? `${task.est_hours}h` : '—'}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono font-semibold"
-                    style={{ color: task.logged_hours > 0 ? t.text : t.textSubtle }}>
-                    {task.logged_hours > 0 ? `${task.logged_hours}h` : '—'}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {task.est_hours != null ? (
-                      <div className="flex items-center gap-1.5 min-w-[80px]">
-                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: t.borderColor }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barC }} />
-                        </div>
-                        <span className="text-xs font-semibold" style={{ color: barC }}>{pct}%</span>
-                      </div>
-                    ) : <span style={{ color: t.textSubtle }}>—</span>}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className="px-2 py-0.5 rounded text-xs"
-                      style={{
-                        background: task.status === 'In Progress' ? 'rgba(59,130,246,0.12)' : task.status === 'Done' ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
-                        color: task.status === 'In Progress' ? '#3b82f6' : task.status === 'Done' ? '#059669' : t.textMuted,
-                      }}>
-                      {task.status}
-                    </span>
-                  </td>
-                </tr>
+                <TaskRow
+                  key={taskId}
+                  task={task}
+                  memberId={member.user_id}
+                  isOpen={openTasks.has(taskId)}
+                  onToggle={() => onToggleTask(taskId)}
+                  token={token}
+                  startDate={startDate}
+                  endDate={endDate}
+                />
               );
-            })}
-          </tbody>
-        </table>
+            })
+          ) : (
+            <p className="text-xs text-center py-2" style={{ color: t.textSubtle }}>No tasks for this member in this epic.</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -747,11 +878,18 @@ function MemberBlock({ member }: { member: EpicMember }) {
 
 // ── Project View — Space section ──────────────────────────────────────────────
 function SpaceSection({
-  space, openEpics, onToggleEpic,
+  space, openEpics, onToggleEpic, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate
 }: {
   space: ProjectSpace;
   openEpics: Set<string>;
   onToggleEpic: (id: string) => void;
+  openMembers: Set<string>;
+  onToggleMember: (id: string) => void;
+  openTasks: Set<string>;
+  onToggleTask: (id: string) => void;
+  token: string;
+  startDate: string;
+  endDate: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -819,6 +957,13 @@ function SpaceSection({
                   epic={epic}
                   isOpen={openEpics.has(epicId)}
                   onToggle={() => onToggleEpic(epicId)}
+                  openMembers={openMembers}
+                  onToggleMember={onToggleMember}
+                  openTasks={openTasks}
+                  onToggleTask={onToggleTask}
+                  token={token}
+                  startDate={startDate}
+                  endDate={endDate}
                 />
               );
             })}
@@ -830,7 +975,16 @@ function SpaceSection({
 }
 
 // ── General section (Holiday / Leave / Meetings) ───────────────────────────────
-function GeneralSection({ general }: { general: GeneralStat }) {
+function GeneralSection({ general, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate }: {
+  general: GeneralStat;
+  openMembers: Set<string>;
+  onToggleMember: (id: string) => void;
+  openTasks: Set<string>;
+  onToggleTask: (id: string) => void;
+  token: string;
+  startDate: string;
+  endDate: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl overflow-hidden shadow-sm" style={{ background: t.cardBg, border: t.border }}>
@@ -858,7 +1012,17 @@ function GeneralSection({ general }: { general: GeneralStat }) {
       {open && (
         <div className="px-8 py-4 space-y-4">
           {general.members.map((member) => (
-            <MemberBlock key={member.user_id} member={member} />
+            <MemberRow
+              key={member.user_id}
+              member={member}
+              isOpen={openMembers.has(member.user_id)}
+              onToggle={() => onToggleMember(member.user_id)}
+              openTasks={openTasks}
+              onToggleTask={onToggleTask}
+              token={token}
+              startDate={startDate}
+              endDate={endDate}
+            />
           ))}
         </div>
       )}
@@ -867,16 +1031,23 @@ function GeneralSection({ general }: { general: GeneralStat }) {
 }
 
 // ── Project / Epic dashboard panel ────────────────────────────────────────────
-function ProjectView({ token, startDate, endDate }: { token: string; startDate: string; endDate: string }) {
+function ProjectView({ token, startDate, endDate, sprintOnly, refreshKey, onFetched }: {
+  token: string; startDate: string; endDate: string;
+  sprintOnly: boolean; refreshKey: number; onFetched: (d: Date) => void;
+}) {
   const [spaces,     setSpaces]     = useState<ProjectSpace[]>([]);
   const [general,    setGeneral]    = useState<GeneralStat | null>(null);
   const [loading,    setLoading]    = useState(true);
-  const [sprintOnly, setSprintOnly] = useState(false);
   const [openEpics,  setOpenEpics]  = useState<Set<string>>(new Set());
+
+  const [openMembers, setOpenMembers] = useState<Set<string>>(new Set());
+  const [openTasks,   setOpenTasks]   = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setOpenEpics(new Set());
+    setOpenMembers(new Set());
+    setOpenTasks(new Set());
     try {
       const url = `${API}/jira/epic-dashboard?sprint_only=${sprintOnly}&start_date=${startDate}&end_date=${endDate}`;
       const res = await fetch(url, { headers: aH(token) });
@@ -884,16 +1055,26 @@ function ProjectView({ token, startDate, endDate }: { token: string; startDate: 
         const d = await res.json();
         setSpaces(d.spaces ?? []);
         setGeneral(d.general ?? null);
+        onFetched(new Date());
       }
     } catch (ex) { console.error(ex); }
     finally { setLoading(false); }
-  }, [token, sprintOnly, startDate, endDate]);
+  }, [token, sprintOnly, startDate, endDate, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const toggleEpic = (id: string) => setOpenEpics((prev) => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
+
+  const toggleMember = (id: string) => setOpenMembers((prev) => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+
+  const toggleTask = (id: string) => setOpenTasks((prev) => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+
 
   const totalLogged = spaces.reduce((s, sp) => s + sp.total_logged_hours, 0)
                     + (general?.total_logged_hours ?? 0);
@@ -909,19 +1090,6 @@ function ProjectView({ token, startDate, endDate }: { token: string; startDate: 
         <span className="text-xs px-2.5 py-1 rounded-md" style={{ background: 'rgba(139,92,246,0.08)', color: '#7c3aed' }}>
           Est = SP × 8h + 20% buffer
         </span>
-        <button
-          onClick={() => setSprintOnly((v) => !v)}
-          className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
-          style={sprintOnly
-            ? { background: 'rgba(16,185,129,0.18)', color: '#059669', border: '1px solid #059669' }
-            : { border: t.border, color: t.textMuted, background: 'transparent' }}>
-          {sprintOnly ? 'Sprint Only' : 'All Tasks'}
-        </button>
-        <button onClick={fetchData}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
-          style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
-          Refresh
-        </button>
       </div>
 
       {/* summary cards */}
@@ -955,9 +1123,25 @@ function ProjectView({ token, startDate, endDate }: { token: string; startDate: 
               space={space}
               openEpics={openEpics}
               onToggleEpic={toggleEpic}
+              openMembers={openMembers}
+              onToggleMember={toggleMember}
+              openTasks={openTasks}
+              onToggleTask={toggleTask}
+              token={token}
+              startDate={startDate}
+              endDate={endDate}
             />
           ))}
-          {general && <GeneralSection general={general} />}
+          {general && <GeneralSection
+            general={general}
+            openMembers={openMembers}
+            onToggleMember={toggleMember}
+            openTasks={openTasks}
+            onToggleTask={toggleTask}
+            token={token}
+            startDate={startDate}
+            endDate={endDate}
+          />}
         </div>
       )}
     </div>
@@ -980,6 +1164,19 @@ export default function ReportsPage() {
   const [loading,   setLoading]   = useState(true);
   const [expanded,  setExpanded]  = useState<Set<string>>(new Set());
 
+  // Sprint filter tabs (for both views)
+  const [resourceSprintOnly, setResourceSprintOnly] = useState(false);
+  const [projectSprintOnly,  setProjectSprintOnly]  = useState(false);
+
+  // Caching: refresh keys (increment to force re-fetch) + last-fetched timestamps
+  const [resourceRefreshKey, setResourceRefreshKey] = useState(0);
+  const [projectRefreshKey,  setProjectRefreshKey]  = useState(0);
+  const [resourceFetchedAt,  setResourceFetchedAt]  = useState<Date | null>(null);
+  const [projectFetchedAt,   setProjectFetchedAt]   = useState<Date | null>(null);
+
+  // ProjectView is mounted lazily on first visit and kept alive thereafter
+  const [projectMounted, setProjectMounted] = useState(false);
+
   useEffect(() => {
     if (user && user.role === 'resource') router.push('/timesheet');
   }, [user, router]);
@@ -1000,10 +1197,13 @@ export default function ReportsPage() {
         `${API}/approvals/analytics?start_date=${startDate}&end_date=${endDate}`,
         { headers: aH(token) },
       );
-      if (res.ok) setStats((await res.json()).analytics ?? []);
+      if (res.ok) {
+        setStats((await res.json()).analytics ?? []);
+        setResourceFetchedAt(new Date());
+      }
     } catch (ex) { console.error(ex); }
     finally { setLoading(false); }
-  }, [token, startDate, endDate]);
+  }, [token, startDate, endDate, resourceRefreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
 
@@ -1014,6 +1214,26 @@ export default function ReportsPage() {
       return next;
     });
   };
+
+  const handleTabSwitch = (tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === 'project' && !projectMounted) setProjectMounted(true);
+  };
+
+  const handleRefresh = () => {
+    if (activeTab === 'resource') setResourceRefreshKey((k) => k + 1);
+    else setProjectRefreshKey((k) => k + 1);
+  };
+
+  const timeAgo = (d: Date | null): string => {
+    if (!d) return '';
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins === 1) return '1 min ago';
+    return `${mins} min ago`;
+  };
+
+  const fetchedAt = activeTab === 'resource' ? resourceFetchedAt : projectFetchedAt;
 
   // 8h × working days in selected range = 100% target
   const workingDays  = countWorkingDays(startDate, endDate);
@@ -1050,7 +1270,7 @@ export default function ReportsPage() {
           {user?.role === 'admin' && (
             <div className="flex rounded-lg overflow-hidden" style={{ border: t.border }}>
               {([['resource', 'Resource View'], ['project', 'Project View']] as [Tab, string][]).map(([tab, label]) => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
+                <button key={tab} onClick={() => handleTabSwitch(tab as Tab)}
                   className="px-4 py-2 text-sm font-medium transition-all"
                   style={activeTab === tab
                     ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
@@ -1060,6 +1280,37 @@ export default function ReportsPage() {
               ))}
             </div>
           )}
+
+          {/* Sprint filter tabs */}
+          <div className="flex rounded-lg overflow-hidden" style={{ border: t.border }}>
+            {[false, true].map((val) => (
+              <button key={String(val)}
+                onClick={() => activeTab === 'resource' ? setResourceSprintOnly(val) : setProjectSprintOnly(val)}
+                className="px-3 py-2 text-xs font-medium transition-all"
+                style={(activeTab === 'resource' ? resourceSprintOnly : projectSprintOnly) === val
+                  ? { background: 'rgba(16,185,129,0.18)', color: '#059669' }
+                  : { background: 'transparent', color: t.textMuted }}>
+                {val ? 'Sprint Tasks' : 'All Tasks'}
+              </button>
+            ))}
+          </div>
+
+          {/* Refresh + timestamp */}
+          <div className="flex items-center gap-2">
+            {fetchedAt && (
+              <span className="text-xs" style={{ color: t.textSubtle }}>{timeAgo(fetchedAt)}</span>
+            )}
+            <button onClick={handleRefresh} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
+              style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
+              <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              Refresh
+            </button>
+          </div>
 
           {/* preset buttons */}
           <div className="flex items-center gap-2">
@@ -1095,10 +1346,20 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {/* ── Project View ── */}
-        {activeTab === 'project' ? (
-          <ProjectView token={token} startDate={startDate} endDate={endDate} />
-        ) : (
+        {/* ── Project View (lazy-mount: stays alive once visited) ── */}
+        {projectMounted && (
+          <div style={{ display: activeTab === 'project' ? 'block' : 'none' }}>
+            <ProjectView
+              token={token} startDate={startDate} endDate={endDate}
+              sprintOnly={projectSprintOnly}
+              refreshKey={projectRefreshKey}
+              onFetched={setProjectFetchedAt}
+            />
+          </div>
+        )}
+
+        {/* ── Resource View ── */}
+        {activeTab === 'resource' && (
           <>
             {/* ── Date range label ── */}
             <p className="text-sm" style={{ color: t.textSubtle }}>
@@ -1142,17 +1403,17 @@ export default function ReportsPage() {
                 <ResourceSection
                   title="Admins" rows={admins} expanded={expanded}
                   targetHours={targetHours} startDate={startDate} endDate={endDate}
-                  token={token} onToggle={toggleExpand}
+                  token={token} sprintOnly={resourceSprintOnly} onToggle={toggleExpand}
                 />
                 <ResourceSection
                   title="Teamleads" rows={teamleads} expanded={expanded}
                   targetHours={targetHours} startDate={startDate} endDate={endDate}
-                  token={token} onToggle={toggleExpand}
+                  token={token} sprintOnly={resourceSprintOnly} onToggle={toggleExpand}
                 />
                 <ResourceSection
                   title="Resources" rows={resources} expanded={expanded}
                   targetHours={targetHours} startDate={startDate} endDate={endDate}
-                  token={token} onToggle={toggleExpand}
+                  token={token} sprintOnly={resourceSprintOnly} onToggle={toggleExpand}
                 />
               </>
             )}

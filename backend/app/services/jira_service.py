@@ -183,6 +183,7 @@ class JiraService:
                     "sprint":           sprint_name,
                     "is_active_sprint": False,  # filled in by the API
                     "assignee":         assignee_name,
+                    "assignee_email":   assignee_field.get("emailAddress"),
                 })
 
             # Batch-fetch epic names for any task whose name wasn't in the parent field
@@ -267,6 +268,7 @@ class JiraService:
                     "sprint":           sprint_name,
                     "is_active_sprint": False,
                     "assignee":         assignee_name,
+                    "assignee_email":   assignee_field.get("emailAddress"),
                 })
 
             # Batch-fetch epic names for any task whose name wasn't in the parent field
@@ -318,6 +320,37 @@ class JiraService:
             print(f"get_all_sprint_keys error: {e}")
         return set()
 
+    def _fetch_paginated_jql(self, jql: str, fields: list, timeout: int = 20) -> list:
+        """Fetch all results using Jira's cursor-based /search/jql pagination (nextPageToken)."""
+        results = []
+        next_page_token = None
+        max_results = 100
+        while True:
+            try:
+                payload = {"jql": jql, "maxResults": max_results, "fields": fields}
+                if next_page_token:
+                    payload["nextPageToken"] = next_page_token
+                r = requests.post(
+                    f"{self.base_url}/search/jql",
+                    auth=self.auth,
+                    headers={**self.headers, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=timeout,
+                )
+                if not r.ok:
+                    print(f"JQL pagination query failed ({r.status_code} on '{jql}'): {r.text[:200]}")
+                    break
+                data = r.json()
+                issues = data.get("issues", [])
+                results.extend(issues)
+                if data.get("isLast", True) or not data.get("nextPageToken"):
+                    break
+                next_page_token = data["nextPageToken"]
+            except Exception as e:
+                print(f"JQL pagination error on '{jql}': {e}")
+                break
+        return results
+
     # ── Epic dashboard helpers ──────────────────────────────────────────────────
 
     def get_active_sprint_keys_for_tasks(self, task_keys: list) -> set:
@@ -348,36 +381,28 @@ class JiraService:
         return set()
 
     def get_all_open_epics(self) -> list:
-        """Fetch all open Epic-type issues across all projects.
+        """Fetch all Epic-type issues across all projects.
         Returns list of {key, name, status}."""
         try:
-            r = requests.post(
-                f"{self.base_url}/search/jql",
-                auth=self.auth,
-                headers={**self.headers, "Content-Type": "application/json"},
-                json={
-                    "jql": "issuetype = Epic AND statusCategory != Done ORDER BY updated DESC",
-                    "maxResults": 100,
-                    "fields": ["summary", "status", "assignee", "customfield_10020"],
-                },
-                timeout=15,
-            )
-            if r.ok:
-                epics = []
-                for issue in r.json().get("issues", []):
-                    fields = issue.get("fields", {})
-                    sprint_name = None
-                    sprints = fields.get("customfield_10020") or []
-                    if isinstance(sprints, list) and sprints:
-                        sprint_name = sprints[-1].get("name")
-                    epics.append({
-                        "key":    issue["key"],
-                        "name":   fields.get("summary", ""),
-                        "status": fields.get("status", {}).get("name", "Unknown"),
-                        "sprint": sprint_name,
-                    })
-                print(f"get_all_open_epics: found {len(epics)} epics")
-                return epics
+            jql = "issuetype = Epic ORDER BY updated DESC"
+            fields = ["summary", "status", "assignee", "customfield_10020"]
+            issues = self._fetch_paginated_jql(jql, fields, timeout=15)
+
+            epics = []
+            for issue in issues:
+                fields = issue.get("fields", {})
+                sprint_name = None
+                sprints = fields.get("customfield_10020") or []
+                if isinstance(sprints, list) and sprints:
+                    sprint_name = sprints[-1].get("name")
+                epics.append({
+                    "key":    issue["key"],
+                    "name":   fields.get("summary", ""),
+                    "status": fields.get("status", {}).get("name", "Unknown"),
+                    "sprint": sprint_name,
+                })
+            print(f"get_all_open_epics: found {len(epics)} epics")
+            return epics
         except Exception as e:
             print(f"get_all_open_epics error: {e}")
         return []
@@ -390,39 +415,24 @@ class JiraService:
             return []
         import re
         try:
-            keys_str = ", ".join(epic_keys)
-            # Use 'parent in (...)' which works for next-gen projects
-            # and '"Epic Link" in (...)' for classic projects — combine with OR
-            jql = (
-                f'(parent in ({keys_str}) OR "Epic Link" in ({keys_str})) '
-                f'AND statusCategory != Done ORDER BY updated DESC'
-            )
-            payload = {
-                "jql": jql,
-                "maxResults": 500,
-                "fields": [
+            all_issues = []
+            batch_size = 50  # Process epics in batches to keep JQL short
+            for i in range(0, len(epic_keys), batch_size):
+                batch = epic_keys[i:i+batch_size]
+                keys_str = ", ".join(f'"{k}"' for k in batch)
+                jql = f'(parent in ({keys_str}) OR "Epic Link" in ({keys_str})) ORDER BY updated DESC'
+                batch_fields = [
                     "summary", "status", "assignee",
                     "customfield_10016",   # story points
+                    "customfield_10028",   # story points (alt)
                     "customfield_10014",   # epic link (legacy)
                     "parent",
-                    "timeoriginalestimate",
-                    "timespent",
                     "customfield_10020",   # sprint
-                ],
-            }
-            r = requests.post(
-                f"{self.base_url}/search/jql",
-                auth=self.auth,
-                headers={**self.headers, "Content-Type": "application/json"},
-                json=payload,
-                timeout=20,
-            )
-            if not r.ok:
-                print(f"get_tasks_for_epics failed: {r.status_code} {r.text[:200]}")
-                return []
+                ]
+                all_issues.extend(self._fetch_paginated_jql(jql, batch_fields))
 
             tasks = []
-            for issue in r.json().get("issues", []):
+            for issue in all_issues:
                 fields  = issue.get("fields", {})
                 summary = fields.get("summary", "")
 
@@ -463,6 +473,7 @@ class JiraService:
                     "sprint":           sprint_name,
                     "is_active_sprint": False,
                     "assignee":         assignee_field.get("displayName"),
+                    "assignee_email":   assignee_field.get("emailAddress"),
                 })
 
             print(f"get_tasks_for_epics({len(epic_keys)} epics): found {len(tasks)} tasks")

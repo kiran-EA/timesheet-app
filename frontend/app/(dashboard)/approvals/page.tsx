@@ -56,6 +56,11 @@ export default function ApprovalsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejecting,    setRejecting]    = useState(false);
 
+  // Confirmation dialogs
+  const [confirmApproveAll,  setConfirmApproveAll]  = useState(false);
+  const [confirmApproveUser, setConfirmApproveUser] = useState<{ userId: string; name: string; items: PendingEntry[] } | null>(null);
+  const [approvingUser,      setApprovingUser]      = useState(false);
+
   // Redirect non-managers
   useEffect(() => {
     if (user && user.role === 'resource') router.push('/timesheet');
@@ -91,7 +96,19 @@ export default function ApprovalsPage() {
       : `${API}/approvals/approve-all`;
     await fetch(url, { method: 'POST', headers: aH(token) });
     setEntries([]);
+    setConfirmApproveAll(false);
     flash('All entries approved.');
+  };
+
+  const handleApproveUser = async (userId: string, items: PendingEntry[]) => {
+    setApprovingUser(true);
+    await Promise.all(items.map((e) =>
+      fetch(`${API}/approvals/approve/${e.id}`, { method: 'POST', headers: aH(token) })
+    ));
+    setEntries((prev) => prev.filter((e) => e.user_id !== userId));
+    setConfirmApproveUser(null);
+    setApprovingUser(false);
+    flash(`All entries for ${items[0]?.full_name ?? 'user'} approved.`);
   };
 
   const handleReject = async () => {
@@ -154,7 +171,7 @@ export default function ApprovalsPage() {
             Refresh
           </button>
           {pendingCount > 0 && (
-            <button onClick={handleApproveAll}
+            <button onClick={() => setConfirmApproveAll(true)}
               className="px-5 py-2 rounded-lg text-white font-semibold text-sm hover:opacity-90 transition-opacity"
               style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
               Approve All ({pendingCount})
@@ -240,10 +257,18 @@ export default function ApprovalsPage() {
                     )}
                   </div>
                 </div>
-                <span className="text-xs font-medium px-3 py-1 rounded-full"
-                  style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>
-                  {items.length} pending
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium px-3 py-1 rounded-full"
+                    style={{ background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>
+                    {items.length} pending
+                  </span>
+                  <button
+                    onClick={() => setConfirmApproveUser({ userId: info.user_id, name: info.full_name, items })}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition-opacity"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                    Approve ({items.length})
+                  </button>
+                </div>
               </div>
 
               {/* Entries table */}
@@ -300,6 +325,59 @@ export default function ApprovalsPage() {
           ))
         )}
       </div>
+
+      {/* Confirm Approve All Modal */}
+      {confirmApproveAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: t.modalBg, backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl"
+            style={{ background: t.cardBg, border: t.border }}>
+            <h3 className="text-lg font-semibold" style={{ color: t.text }}>Approve All Entries?</h3>
+            <p className="text-sm" style={{ color: t.textMuted }}>
+              This will approve <strong>{pendingCount}</strong> pending entr{pendingCount === 1 ? 'y' : 'ies'} across all team members. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={handleApproveAll}
+                className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                Confirm Approve All
+              </button>
+              <button onClick={() => setConfirmApproveAll(false)}
+                className="px-5 py-2.5 rounded-lg text-sm font-medium"
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.textMuted }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Approve Person Modal */}
+      {confirmApproveUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: t.modalBg, backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl"
+            style={{ background: t.cardBg, border: t.border }}>
+            <h3 className="text-lg font-semibold" style={{ color: t.text }}>Approve All for {confirmApproveUser.name}?</h3>
+            <p className="text-sm" style={{ color: t.textMuted }}>
+              This will approve <strong>{confirmApproveUser.items.length}</strong> entr{confirmApproveUser.items.length === 1 ? 'y' : 'ies'} for <strong>{confirmApproveUser.name}</strong>. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => handleApproveUser(confirmApproveUser.userId, confirmApproveUser.items)}
+                disabled={approvingUser}
+                className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                {approvingUser ? 'Approving…' : 'Confirm Approve'}
+              </button>
+              <button onClick={() => setConfirmApproveUser(null)} disabled={approvingUser}
+                className="px-5 py-2.5 rounded-lg text-sm font-medium"
+                style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.textMuted }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reject Modal */}
       {rejectTarget && (

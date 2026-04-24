@@ -241,31 +241,28 @@ def get_pending_entries_for_manager(manager_id: str, entry_date: str = None) -> 
     return result
 
 
-def get_all_pending_entries(entry_date: str = None) -> list:
-    """Admin: fetch ALL pending/resubmitted entries across every user. Not cached."""
+def get_all_pending_entries(entry_date: str = None, exclude_user_id: str = None) -> list:
+    """Admin: fetch ALL pending/resubmitted entries across every user. Not cached.
+    exclude_user_id: omit the admin's own entries from the result."""
+    conditions = ["te.status IN ('pending', 'resubmitted')"]
+    params: list = []
     if entry_date:
-        query = """
-            SELECT te.*, u.full_name, u.email, u.avatar, u.role,
-                   m.full_name AS manager_name
-            FROM timesheet_entries te
-            JOIN users u ON u.user_id = te.user_id
-            LEFT JOIN users m ON m.user_id = u.manager_id
-            WHERE te.entry_date = %s
-              AND te.status IN ('pending', 'resubmitted')
-            ORDER BY te.entry_date DESC, u.full_name
-        """
-        return execute_query(query, (entry_date,), fetch_all=True) or []
-    else:
-        query = """
-            SELECT te.*, u.full_name, u.email, u.avatar, u.role,
-                   m.full_name AS manager_name
-            FROM timesheet_entries te
-            JOIN users u ON u.user_id = te.user_id
-            LEFT JOIN users m ON m.user_id = u.manager_id
-            WHERE te.status IN ('pending', 'resubmitted')
-            ORDER BY te.entry_date DESC, u.full_name
-        """
-        return execute_query(query, fetch_all=True) or []
+        conditions.append("te.entry_date = %s")
+        params.append(entry_date)
+    if exclude_user_id:
+        conditions.append("te.user_id != %s")
+        params.append(exclude_user_id)
+    where = " AND ".join(conditions)
+    query = f"""
+        SELECT te.*, u.full_name, u.email, u.avatar, u.role,
+               m.full_name AS manager_name
+        FROM timesheet_entries te
+        JOIN users u ON u.user_id = te.user_id
+        LEFT JOIN users m ON m.user_id = u.manager_id
+        WHERE {where}
+        ORDER BY te.entry_date DESC, u.full_name
+    """
+    return execute_query(query, tuple(params) if params else None, fetch_all=True) or []
 
 
 def approve_entry(entry_id: str, approved_by: str):
@@ -451,3 +448,13 @@ def get_user_entries_in_range(user_id: str, start_date: str, end_date: str) -> l
         WHERE user_id = %s AND entry_date BETWEEN %s AND %s
         ORDER BY entry_date DESC, created_at DESC
     """, (user_id, start_date, end_date), fetch_all=True) or []
+
+
+def get_user_task_entries_in_range(user_id: str, task_id: str, start_date: str, end_date: str) -> list:
+    """Get all timesheet entries for a specific user and task in a date range."""
+    return execute_query("""
+        SELECT id, entry_date, work_description, hours, status
+        FROM timesheet_entries
+        WHERE user_id = %s AND task_id = %s AND entry_date BETWEEN %s AND %s
+        ORDER BY entry_date DESC
+    """, (user_id, task_id, start_date, end_date), fetch_all=True) or []

@@ -226,6 +226,10 @@ async def get_epic_dashboard(
     for task in visible_tasks:
         ek = task.get("epic")
         if not ek:
+            # Also add tasks with no epic to a special '__none__' key if they are in visible_tasks
+            if "__none__" not in epic_meta:
+                epic_meta["__none__"] = {"name": None, "tasks": []}
+            epic_meta["__none__"]["tasks"].append(task)
             continue
         if ek not in epic_meta:
             epic_meta[ek] = {"name": task.get("epic_name"), "tasks": []}
@@ -244,13 +248,66 @@ async def get_epic_dashboard(
         epic = row.get("epic") or ""
         db_by_epic[epic][row["user_id"]][row["task_id"]] = float(row["total_hours"])
 
+    # Ensure epics that only exist in DB logs (e.g. from closed epics not in Jira epics_list) are included
+    db_only_epic_keys = set(db_by_epic.keys()) - set(epic_meta.keys())
+    for key in db_only_epic_keys:
+        if key:  # Don't create an entry for empty epic key ""
+            epic_meta[key] = {"name": key, "tasks": []}
+
     # ── 4. User maps ──────────────────────────────────────────────────────────
     all_users = queries.get_all_users()
     user_map  = {u["user_id"]: u for u in all_users}
-    name_map  = {u["full_name"].lower(): u for u in all_users}
 
     def _find_by_name(display: str):
-        return name_map.get((display or "").lower())
+        if not display:
+            return None
+        display_lower = display.lower()
+
+        # 1. Try exact match first (most reliable)
+        user = exact_name_map.get(display_lower)
+        if user:
+            return user
+
+        # 2. If no exact match, try matching by first name. This helps when Jira
+        #    displayName is just "Rashmi" but DB has "Rashmi Umar". We only
+        #    consider it a valid match if there is exactly ONE user with that
+        #    first name to avoid ambiguity (e.g., two people named 'John').
+        if ' ' not in display_lower:
+            potential_matches = first_name_map.get(display_lower)
+            if potential_matches and len(potential_matches) == 1:
+                return potential_matches[0]
+        return None
+
+    exact_name_map = {u["full_name"].lower(): u for u in all_users}
+    email_map      = {u["email"].lower(): u for u in all_users}
+    first_name_map = defaultdict(lambda: [])
+    for u in all_users:
+        first_name_map[u["full_name"].split(' ')[0].lower()].append(u)
+
+    def _find_user(task: dict):
+        """Resolve a Jira task to a DB user.
+        Priority: email → exact name → first-name (unique) → prefix (Jira name starts with DB name).
+        Prefix handles cases like Jira='Rashmi Umar' matching DB full_name='Rashmi' when unique.
+        """
+        # 1. Email (most reliable — works across name mismatches)
+        ae = (task.get("assignee_email") or "").lower()
+        if ae and ae in email_map:
+            return email_map[ae]
+        # 2. Exact name / first-name fallback
+        matched = _find_by_name(task.get("assignee"))
+        if matched:
+            return matched
+        # 3. Prefix match: DB full_name is a word-boundary prefix of the Jira display name
+        #    e.g. Jira "Rashmi Umar" → DB "Rashmi" (if unique)
+        display = (task.get("assignee") or "").lower()
+        if display:
+            prefix_matches = [
+                u for u in all_users
+                if display.startswith(u["full_name"].lower() + " ")
+            ]
+            if len(prefix_matches) == 1:
+                return prefix_matches[0]
+        return None
 
     def _space_of(key: str) -> str:
         m = re.match(r'^([A-Z]+)-\d+$', key or "")
@@ -277,45 +334,48 @@ async def get_epic_dashboard(
 
         pct = round((total_logged / total_est * 100) if total_est > 0 else 0)
 
-        members_dict: dict = {}
-        for task in epic_tasks:
-            aname  = task.get("assignee") or ""
-            db_usr = _find_by_name(aname)
-            uid    = db_usr["user_id"] if db_usr else f"jira__{aname}"
-            if uid not in members_dict:
-                members_dict[uid] = {
-                    "user_id":    uid,
-                    "full_name":  db_usr["full_name"] if db_usr else (aname or "Unassigned"),
-                    "email":      db_usr["email"]     if db_usr else "",
-                    "avatar":     (db_usr.get("avatar") or db_usr["full_name"][0].upper()) if db_usr
-                                  else (aname[:1].upper() or "?"),
-                    "role":       db_usr.get("role", "resource") if db_usr else "resource",
-                    "jira_tasks": [],
-                }
-            members_dict[uid]["jira_tasks"].append(task)
-
-        for uid, tm in db_epic.items():
-            if any(tid in visible_keys for tid in tm) and uid not in members_dict:
-                u = user_map.get(uid)
-                if u:
-                    members_dict[uid] = {
-                        "user_id": uid, "full_name": u["full_name"], "email": u["email"],
-                        "avatar":  u.get("avatar") or u["full_name"][0].upper(),
-                        "role":    u.get("role", "resource"), "jira_tasks": [],
-                    }
+        # 1. Get all unique user IDs involved in this epic from both Jira assignees and DB logs.
+        involved_uids = set(db_epic.keys())
+        for task in all_for_epic:
+            user = _find_user(task)
+            if user:
+                involved_uids.add(user["user_id"])
 
         members = []
-        for uid, m in members_dict.items():
-            mth    = db_epic.get(uid, {})
+        for uid in involved_uids:
+            user_details = user_map.get(uid)
+            if not user_details:
+                continue
+
+            # 2. For this user, find all their tasks in this epic.
+            user_tasks_dict = {}
+            for task in all_for_epic:
+                assignee_user = _find_user(task)
+                if assignee_user and assignee_user["user_id"] == uid:
+                    user_tasks_dict[task["key"]] = task
+
+            logged_task_keys = db_epic.get(uid, {}).keys()
+            for task_key in logged_task_keys:
+                if task_key not in user_tasks_dict:
+                    task_obj = next((t for t in jira_tasks if t["key"] == task_key), None)
+                    if task_obj:
+                        user_tasks_dict[task_key] = task_obj
+
+            final_task_list = list(user_tasks_dict.values())
+            mth = db_epic.get(uid, {})
             mlogged = round(sum(h for tid, h in mth.items() if tid in visible_keys), 2) \
                       if sprint_only else round(sum(mth.values()), 2)
+
+            if not final_task_list and mlogged == 0:
+                continue
+
+            sprint_tasks_count = sum(1 for t in final_task_list if t["key"] in active_keys)
+
             members.append({
-                "user_id":      uid,
-                "full_name":    m["full_name"],
-                "email":        m["email"],
-                "avatar":       m["avatar"],
-                "role":         m["role"],
+                **user_details,
                 "total_logged": mlogged,
+                "total_tasks":  len(final_task_list),
+                "sprint_tasks": sprint_tasks_count,
                 "tasks": [
                     {
                         "key":              t["key"],
@@ -326,7 +386,7 @@ async def get_epic_dashboard(
                         "status":           t["status"],
                         "is_active_sprint": t["key"] in active_keys,
                     }
-                    for t in m["jira_tasks"]
+                    for t in final_task_list
                 ],
             })
         members.sort(key=lambda x: x["full_name"])
@@ -343,7 +403,7 @@ async def get_epic_dashboard(
             "members":             members,
         }
 
-    all_epics = [_build_epic(ek, meta) for ek, meta in epic_meta.items()]
+    all_epics = [_build_epic(ek, meta) for ek, meta in epic_meta.items() if ek and ek != "__none__"]
 
     # Sprint Only at epic level: drop epics with 0 sprint tasks
     if sprint_only:
@@ -385,6 +445,8 @@ async def get_epic_dashboard(
                     "avatar":  u.get("avatar") or u["full_name"][0].upper(),
                     "role":    u.get("role", "resource"),
                     "total_logged": round(uh, 2),
+                    "total_tasks": len(tm),
+                    "sprint_tasks": 0,
                     "tasks": [
                         {"key": tid, "title": tid, "story_points": None, "est_hours": None,
                          "logged_hours": h, "status": "—", "is_active_sprint": False}
@@ -445,6 +507,11 @@ async def get_epic_dashboard(
             "logged_hours": h, "status": "Active", "is_active_sprint": False,
         })
 
+    # Add task counts to each member before finalizing
+    for member_data in gen_members_dict.values():
+        member_data["total_tasks"] = len(member_data["tasks"])
+        member_data["sprint_tasks"] = 0
+
     general = {
         "total_logged_hours": round(gen_logged, 2),
         "member_count":       len(gen_members_dict),
@@ -454,6 +521,29 @@ async def get_epic_dashboard(
     return {"spaces": result_spaces, "general": general}
 
 
+@router.get("/task-entries")
+async def get_task_entries(
+    user_id: str = Query(...),
+    task_id: str = Query(...),
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only: Get all timesheet entries for a specific user and task in a date range."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    entries = queries.get_user_task_entries_in_range(user_id, task_id, start_date, end_date)
+    
+    # Ensure data types are JSON serializable
+    for entry in entries:
+        if entry.get('entry_date'):
+            entry['entry_date'] = str(entry['entry_date'])
+        if entry.get('hours'):
+            entry['hours'] = float(entry['hours'])
+    return entries
+
+
 # ── Resource View drill-down: User → Jira Space → Epic → Entries ─────────────
 
 @router.get("/user-spaces")
@@ -461,6 +551,7 @@ async def get_user_spaces(
     user_id: str,
     start_date: str,
     end_date: str,
+    sprint_only: bool = False,
     current_user: dict = Depends(get_current_user),
 ):
     """Admin/Teamlead: timesheet drill-down for a single user.
@@ -480,6 +571,8 @@ async def get_user_spaces(
     # 2. Jira tasks assigned to this user (cached 5 min) + active sprint keys
     jira_tasks, active_sprint_keys = _fetch_tasks_cached(email)
     jira_tasks = [t for t in jira_tasks if t["key"] not in GENERAL_TASK_KEYS]
+    if sprint_only:
+        jira_tasks = [t for t in jira_tasks if t["key"] in active_sprint_keys]
 
     # 3. DB timesheet entries for this user in the date range
     db_entries = queries.get_user_entries_in_range(user_id, start_date, end_date)

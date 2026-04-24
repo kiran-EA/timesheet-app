@@ -23,7 +23,7 @@ async def get_pending(
     Teamlead → direct subordinates only."""
     require_manager(current_user)
     if current_user.get("role") == "admin":
-        rows = queries.get_all_pending_entries(entry_date)
+        rows = queries.get_all_pending_entries(entry_date, exclude_user_id=current_user["sub"])
     else:
         rows = queries.get_pending_entries_for_manager(current_user["sub"], entry_date)
     return {"entries": [dict(r) for r in rows], "count": len(rows)}
