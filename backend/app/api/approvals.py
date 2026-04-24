@@ -85,6 +85,31 @@ async def get_analytics(
     return {"analytics": [dict(r) for r in rows]}
 
 
+@router.get("/insights")
+async def get_insights(
+    start_date: str = Query(...),
+    end_date: str   = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin-only: all chart data for the Dashboard Insights page in one call."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    user_hours   = queries.get_insights_user_hours(start_date, end_date)
+    daily_hours  = queries.get_insights_daily_hours(start_date, end_date)
+    status_breakdown = queries.get_insights_status_breakdown(start_date, end_date)
+    space_hours  = queries.get_insights_space_hours(start_date, end_date)
+    dow_pattern  = queries.get_insights_dow_pattern(start_date, end_date)
+
+    return {
+        "user_hours":       [dict(r) for r in user_hours],
+        "daily_hours":      [dict(r) for r in daily_hours],
+        "status_breakdown": [dict(r) for r in status_breakdown],
+        "space_hours":      [dict(r) for r in space_hours],
+        "dow_pattern":      [dict(r) for r in dow_pattern],
+    }
+
+
 @router.get("/analytics/tasks")
 async def get_task_breakdown(
     user_id: str    = Query(..., description="Target user's user_id"),
