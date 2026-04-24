@@ -115,7 +115,7 @@ function HoursOverTime({ data }: { data: DailyHour[] }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
           <XAxis dataKey="date" tickFormatter={fmt} tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} />
           <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}h`, 'Team Hours']} labelFormatter={fmt} />
+          <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`${Number(v ?? 0).toFixed(1)}h`, 'Team Hours']} labelFormatter={fmt} />
           <Area type="monotone" dataKey="total_hours" stroke="#3b82f6" strokeWidth={2} fill="url(#gradHours)" dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} />
         </AreaChart>
       </ResponsiveContainer>
@@ -150,7 +150,7 @@ function ApprovalDonut({ data }: { data: StatusRow[] }) {
               <Cell key={row.status} fill={STATUS_COLOR[row.status] ?? '#64748b'} />
             ))}
           </Pie>
-          <Tooltip {...tooltipStyle} formatter={(v: number, _: string, props: { payload?: StatusRow }) => [
+          <Tooltip {...tooltipStyle} formatter={(v: unknown, _: unknown, props: { payload?: StatusRow }) => [
             `${v} entries · ${Number(props.payload?.total_hours ?? 0).toFixed(1)}h`, props.payload?.status ?? '',
           ]} />
           <Legend iconType="circle" iconSize={8} formatter={(v) => <span style={{ color: '#94a3b8', fontSize: 12 }}>{v}</span>} />
@@ -169,7 +169,7 @@ function SpaceDistribution({ data }: { data: SpaceHour[] }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" horizontal={false} />
           <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
           <YAxis type="category" dataKey="space_key" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }} tickLine={false} axisLine={false} width={50} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}h`, 'Logged Hours']} />
+          <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`${Number(v ?? 0).toFixed(1)}h`, 'Logged Hours']} />
           <Bar dataKey="total_hours" radius={[0, 4, 4, 0]} maxBarSize={20}>
             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Bar>
@@ -201,8 +201,8 @@ function TeamUtilization({ data, targetHours }: { data: UserHour[]; targetHours:
           <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} />
           <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
           <Tooltip {...tooltipStyle}
-            formatter={(v: number, _: string, props: { payload?: typeof chartData[number] }) => [
-              `${v.toFixed(1)}h (${props.payload?.pct ?? 0}%)`, props.payload?.full ?? '',
+            formatter={(v: unknown, _: unknown, props: { payload?: typeof chartData[number] }) => [
+              `${Number(v ?? 0).toFixed(1)}h (${props.payload?.pct ?? 0}%)`, props.payload?.full ?? '',
             ]} />
           <ReferenceLine y={targetHours} stroke="#8b5cf6" strokeDasharray="4 2" strokeWidth={1.5}
             label={{ value: 'Target', position: 'right', fill: '#8b5cf6', fontSize: 11 }} />
@@ -229,8 +229,8 @@ function TopContributors({ data }: { data: UserHour[] }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" horizontal={false} />
           <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
           <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} tickLine={false} axisLine={false} width={55} />
-          <Tooltip {...tooltipStyle} formatter={(v: number, _: string, props: { payload?: typeof top[number] }) => [
-            `${v.toFixed(1)}h`, props.payload?.full ?? '',
+          <Tooltip {...tooltipStyle} formatter={(v: unknown, _: unknown, props: { payload?: typeof top[number] }) => [
+            `${Number(v ?? 0).toFixed(1)}h`, props.payload?.full ?? '',
           ]} />
           <Bar dataKey="hours" radius={[0, 4, 4, 0]} maxBarSize={20}>
             {top.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
