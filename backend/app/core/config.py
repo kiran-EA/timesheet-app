@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     SMTP_EMAIL: str
     SMTP_PASSWORD: str
     
-    GOOGLE_CLIENT_ID: str
-    GOOGLE_CLIENT_SECRET: str
-    GOOGLE_REDIRECT_URI: str
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "service-account.json"
     GOOGLE_SERVICE_ACCOUNT_CONTENT: str = ""   # JSON string — used on Render instead of file
     GOOGLE_ADMIN_EMAIL: str = ""               # org admin email for impersonation
