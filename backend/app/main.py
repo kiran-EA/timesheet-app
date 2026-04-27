@@ -67,7 +67,7 @@ async def root():
         "status": "running"
     }
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     import os
     from app.core.config import settings
