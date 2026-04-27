@@ -349,8 +349,13 @@ async def get_epic_dashboard(
         epic_tasks   = meta["tasks"]
         all_for_epic = [t for t in jira_tasks if t.get("epic") == epic_key]
         active_cnt   = sum(1 for t in all_for_epic if t["key"] in active_keys)
-        epic_sp   = meta.get("story_points")
-        total_est = round(epic_sp * 8, 2) if epic_sp is not None else 0
+        epic_sp = meta.get("story_points")
+        if epic_sp is not None:
+            # Epic has its own SP field — use it directly
+            total_est = round(epic_sp * 8, 2)
+        else:
+            # Jira stores SP on tasks, not the epic itself — sum child task SPs
+            total_est = round(sum((t.get("story_points") or 0) * 8 for t in epic_tasks), 2)
         visible_keys = {t["key"] for t in epic_tasks}
         db_epic      = db_by_epic.get(epic_key, {})
 

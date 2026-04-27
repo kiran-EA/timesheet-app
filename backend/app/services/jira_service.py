@@ -386,7 +386,7 @@ class JiraService:
         try:
             jql = "issuetype = Epic ORDER BY updated DESC"
             fields = ["summary", "status", "assignee", "customfield_10020",
-                      "customfield_10016", "customfield_10028"]  # story points
+                      "customfield_10016", "customfield_10028", "customfield_10008"]  # story points variants
             issues = self._fetch_paginated_jql(jql, fields, timeout=15)
 
             epics = []
@@ -396,7 +396,7 @@ class JiraService:
                 sprints = f.get("customfield_10020") or []
                 if isinstance(sprints, list) and sprints:
                     sprint_name = sprints[-1].get("name")
-                sp = f.get("customfield_10016") or f.get("customfield_10028")
+                sp = f.get("customfield_10016") or f.get("customfield_10028") or f.get("customfield_10008")
                 epics.append({
                     "key":          issue["key"],
                     "name":         f.get("summary", ""),
