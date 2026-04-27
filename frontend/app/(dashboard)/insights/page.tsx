@@ -19,6 +19,7 @@ interface Member {
 interface Epic {
   epic_key: string | null; epic_name: string | null;
   epic_status: string; total_logged_hours: number;
+  total_est_hours: number;
   member_count: number; members: Member[];
 }
 interface Space {
@@ -69,7 +70,7 @@ let _epicCache:  { data: { spaces: Space[] }; key: string } | null = null;
 
 // ── UserBar ───────────────────────────────────────────────────────────────────
 function UserBar({ member, pct, color }: { member: Member; pct: number; color: string }) {
-  const [tip, setTip] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   if (pct <= 0) return null;
   const first = member.full_name.split(' ')[0];
 
@@ -77,38 +78,35 @@ function UserBar({ member, pct, color }: { member: Member; pct: number; color: s
     <div
       className="relative h-full flex items-center justify-center cursor-default flex-shrink-0"
       style={{ width: `${pct}%`, background: color, minWidth: 4 }}
-      onMouseEnter={() => setTip(true)}
-      onMouseLeave={() => setTip(false)}
+      onMouseMove={(e) => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
     >
       {/* Hover overlay */}
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-150"
-        style={{ background: 'rgba(255,255,255,0.18)', opacity: tip ? 1 : 0 }} />
-      {/* Name label — only when bar is wide enough */}
-      {pct > 9 && (
+        style={{ background: 'rgba(255,255,255,0.18)', opacity: pos ? 1 : 0 }} />
+      {/* Name label */}
+      {pct > 8 && (
         <span className="relative text-white text-xs font-semibold truncate px-2 pointer-events-none select-none"
-          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)', letterSpacing: '0.01em' }}>
+          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
           {first}
         </span>
       )}
-      {/* Subtle right separator */}
+      {/* Separator */}
       <div className="absolute right-0 top-1 bottom-1 w-px pointer-events-none"
         style={{ background: 'rgba(255,255,255,0.22)' }} />
-      {/* Tooltip */}
-      {tip && (
-        <div className="absolute z-30 pointer-events-none"
-          style={{ bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)' }}>
-          <div className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shadow-xl"
-            style={{ background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0' }}>
-            <span style={{ color }}>{member.full_name}</span>
-            <span style={{ color: '#475569' }}> · </span>
-            <span className="font-bold" style={{ color: '#f8fafc' }}>{member.total_logged.toFixed(1)}h</span>
-          </div>
-          <div style={{
-            width: 0, height: 0, margin: '0 auto',
-            borderLeft: '5px solid transparent',
-            borderRight: '5px solid transparent',
-            borderTop: '5px solid #334155',
-          }} />
+      {/* Tooltip — fixed so it escapes overflow:hidden */}
+      {pos && (
+        <div className="pointer-events-none" style={{
+          position: 'fixed', zIndex: 9999,
+          left: pos.x + 14, top: pos.y - 44,
+          background: '#0f172a', border: '1px solid #334155',
+          borderRadius: 8, padding: '6px 12px',
+          fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+          color: '#e2e8f0', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        }}>
+          <span style={{ color }}>{member.full_name}</span>
+          <span style={{ color: '#475569' }}> · </span>
+          <span style={{ color: '#f8fafc', fontWeight: 700 }}>{member.total_logged.toFixed(1)}h logged</span>
         </div>
       )}
     </div>
@@ -119,15 +117,25 @@ function UserBar({ member, pct, color }: { member: Member; pct: number; color: s
 function EpicRow({ epic, userColorMap, borderTop }: {
   epic: Epic; userColorMap: Record<string, string>; borderTop: boolean;
 }) {
-  const sorted = [...epic.members].filter(m => m.total_logged > 0).sort((a, b) => b.total_logged - a.total_logged);
-  const total = epic.total_logged_hours || 0;
-  const name  = epic.epic_name || epic.epic_key || '(No Epic)';
+  const estHours   = epic.total_est_hours || 0;
+  const totalLogged = epic.total_logged_hours || 0;
+  // Bar capacity: SP×8 if available, else fall back to logged hours
+  const capacity   = estHours > 0 ? estHours : totalLogged;
+  const hasEst     = estHours > 0;
+  const overBudget = hasEst && totalLogged > estHours;
+  const filledPct  = capacity > 0 ? Math.min(100, (totalLogged / capacity) * 100) : 0;
+  const name       = epic.epic_name || epic.epic_key || '(No Epic)';
+
+  const sorted = [...epic.members]
+    .filter(m => m.total_logged > 0)
+    .sort((a, b) => b.total_logged - a.total_logged);
 
   return (
-    <div className="flex items-center gap-5 py-3"
+    <div className="flex items-start gap-5 py-3"
       style={borderTop ? { borderTop: `1px solid ${t.borderColor}` } : {}}>
+
       {/* Epic info */}
-      <div className="w-52 flex-shrink-0">
+      <div className="w-52 flex-shrink-0 pt-0.5">
         <div className="text-sm font-semibold leading-snug" style={{ color: t.textBody }} title={name}>
           {name.length > 32 ? name.slice(0, 30) + '…' : name}
         </div>
@@ -135,32 +143,60 @@ function EpicRow({ epic, userColorMap, borderTop }: {
           {epic.epic_key && (
             <span className="text-xs font-mono" style={{ color: t.textSubtle }}>{epic.epic_key}</span>
           )}
-          {total > 0 && (
-            <span className="text-xs font-bold" style={{ color: t.textMuted }}>{total.toFixed(1)}h</span>
-          )}
         </div>
       </div>
 
-      {/* Proportional user bars */}
-      <div className="flex-1 h-10 rounded-xl overflow-hidden flex"
-        style={{
-          background: total > 0 ? 'transparent' : t.tableHead,
-          border: `1px solid ${t.borderColor}`,
-        }}>
-        {total > 0 ? (
-          sorted.map(m => (
-            <UserBar
-              key={m.user_id}
-              member={m}
-              pct={(m.total_logged / total) * 100}
-              color={userColorMap[m.user_id] ?? '#64748b'}
-            />
-          ))
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-xs font-medium" style={{ color: t.textSubtle }}>
-            No hours logged in this period
-          </div>
-        )}
+      {/* Bar + meta */}
+      <div className="flex-1 min-w-0">
+        {/* Progress bar: full width = estimated hours */}
+        <div className="h-10 rounded-xl overflow-hidden relative flex"
+          style={{ background: t.tableHead, border: `1px solid ${t.borderColor}` }}>
+          {totalLogged > 0 ? (
+            /* Filled user segments — each sized relative to total capacity */
+            <div className="flex h-full" style={{ width: `${filledPct}%` }}>
+              {sorted.map(m => (
+                <UserBar
+                  key={m.user_id}
+                  member={m}
+                  pct={(m.total_logged / totalLogged) * 100}
+                  color={userColorMap[m.user_id] ?? '#64748b'}
+                />
+              ))}
+            </div>
+          ) : null}
+          {/* Remaining label on the right */}
+          {hasEst && !overBudget && totalLogged < estHours && (
+            <div className="absolute right-3 inset-y-0 flex items-center text-xs font-medium pointer-events-none"
+              style={{ color: t.textSubtle }}>
+              {(estHours - totalLogged).toFixed(0)}h left
+            </div>
+          )}
+          {overBudget && (
+            <div className="absolute right-3 inset-y-0 flex items-center text-xs font-semibold pointer-events-none"
+              style={{ color: '#ef4444' }}>
+              +{(totalLogged - estHours).toFixed(0)}h over
+            </div>
+          )}
+          {totalLogged === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs font-medium"
+              style={{ color: t.textSubtle }}>
+              No hours logged in this period
+            </div>
+          )}
+        </div>
+
+        {/* Stats below bar */}
+        <div className="flex items-center justify-between mt-1 px-0.5">
+          <span className="text-xs" style={{ color: t.textSubtle }}>
+            {totalLogged.toFixed(1)}h logged
+            {hasEst && <> · <span style={{ color: t.textMuted }}>{filledPct.toFixed(0)}% of {estHours.toFixed(0)}h est</span></>}
+          </span>
+          {hasEst && (
+            <span className="text-xs font-semibold" style={{ color: overBudget ? '#ef4444' : filledPct >= 80 ? '#f59e0b' : '#10b981' }}>
+              {overBudget ? 'Over budget' : filledPct >= 100 ? 'Complete' : `${(100 - filledPct).toFixed(0)}% remaining`}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
