@@ -222,7 +222,7 @@ async def get_epic_dashboard(
     visible_tasks = [t for t in jira_tasks if t["key"] in active_keys] if sprint_only else jira_tasks
 
     # ── 2. Build epic_meta: epic_key → {name, tasks} ─────────────────────────
-    epic_meta: dict = {e["key"]: {"name": e["name"], "tasks": []} for e in epics_list}
+    epic_meta: dict = {e["key"]: {"name": e["name"], "status": e.get("status", ""), "tasks": []} for e in epics_list}
     for task in visible_tasks:
         ek = task.get("epic")
         if not ek:
@@ -251,8 +251,8 @@ async def get_epic_dashboard(
     # Ensure epics that only exist in DB logs (e.g. from closed epics not in Jira epics_list) are included
     db_only_epic_keys = set(db_by_epic.keys()) - set(epic_meta.keys())
     for key in db_only_epic_keys:
-        if key:  # Don't create an entry for empty epic key ""
-            epic_meta[key] = {"name": key, "tasks": []}
+        if key:
+            epic_meta[key] = {"name": key, "status": "", "tasks": []}
 
     # ── 4. User maps ──────────────────────────────────────────────────────────
     all_users = queries.get_all_users()
@@ -394,6 +394,7 @@ async def get_epic_dashboard(
         return {
             "epic_key":            epic_key,
             "epic_name":           meta["name"],
+            "epic_status":         meta.get("status", ""),
             "total_tasks":         len(epic_tasks),
             "active_sprint_tasks": active_cnt,
             "total_est_hours":     total_est,
