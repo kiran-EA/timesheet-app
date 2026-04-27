@@ -199,16 +199,37 @@ async def get_epic_dashboard(
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    _EPIC_CACHE_TTL = 300
+    _EPIC_CACHE_TTL  = 1800   # 30 min — serve stale, refresh in background
+    _EPIC_REFRESH_KEY = "epic-dashboard-refreshing"
 
-    # ── 1. Jira data — cached 5 min ──────────────────────────────────────────
+    def _refresh_epic_cache():
+        if _task_cache.get(_EPIC_REFRESH_KEY):
+            return  # already refreshing
+        _task_cache[_EPIC_REFRESH_KEY] = True
+        try:
+            el    = jira_service.get_all_open_epics()
+            ekeys = [e["key"] for e in el]
+            jt    = jira_service.get_tasks_for_epics(ekeys) if ekeys else []
+            ak    = jira_service.get_active_sprint_keys_for_tasks([t["key"] for t in jt])
+            _task_cache["epic-dashboard-jira"] = {"ts": time.time(), "epics": el, "tasks": jt, "active_keys": ak}
+        except Exception as e:
+            print(f"Background epic cache refresh error: {e}")
+        finally:
+            _task_cache.pop(_EPIC_REFRESH_KEY, None)
+
+    # ── 1. Jira data — stale-while-revalidate ────────────────────────────────
+    import threading
     now = time.time()
     _ec = _task_cache.get("epic-dashboard-jira")
-    if _ec and now - _ec["ts"] < _EPIC_CACHE_TTL:
+    if _ec:
         epics_list  = _ec["epics"]
         jira_tasks  = _ec["tasks"]
         active_keys = _ec["active_keys"]
+        # Cache stale → refresh in background, return old data immediately
+        if now - _ec["ts"] >= _EPIC_CACHE_TTL:
+            threading.Thread(target=_refresh_epic_cache, daemon=True).start()
     else:
+        # First load — must wait (no cached data yet)
         epics_list    = jira_service.get_all_open_epics()
         epic_keys_all = [e["key"] for e in epics_list]
         jira_tasks    = jira_service.get_tasks_for_epics(epic_keys_all) if epic_keys_all else []
