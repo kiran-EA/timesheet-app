@@ -28,7 +28,7 @@ export default function AuthCallbackPage() {
       id:         user_id,
       email,
       name,
-      role,
+      role:       role as 'admin' | 'teamlead' | 'resource',
       avatar,
       manager_id: manager_id || null,
     });
