@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { t } from '@/lib/theme';
 
@@ -284,10 +284,12 @@ export default function MyAnalyticsPage() {
   const [loading,    setLoading]    = useState(false);
   const [mounted,    setMounted]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
-  const [targetId,   setTargetId]   = useState('');
+  const [adminUsers,  setAdminUsers]  = useState<AdminUser[]>([]);
+  const [targetId,    setTargetId]    = useState('');
+  const [refreshKey,  setRefreshKey]  = useState(0);
 
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const effectiveId = isAdmin ? (targetId || myId) : myId;
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -295,29 +297,24 @@ export default function MyAnalyticsPage() {
     if (!isAdmin || !token) return;
     fetch(`${API}/users/all`, { headers: aH(token) })
       .then(r => r.ok ? r.json() : { users: [] })
-      .then(d => {
-        setAdminUsers(d.users ?? []);
-        if (!targetId) setTargetId(myId);
-      })
+      .then(d => { setAdminUsers(d.users ?? []); })
       .catch(() => {});
-  }, [isAdmin, token, myId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdmin, token]);
 
-  const effectiveId = isAdmin ? (targetId || myId) : myId;
-
-  const fetchData = useCallback(async () => {
-    if (!effectiveId) return;
+  // Fetch calendar data whenever user, month, year, or manual refresh changes
+  useEffect(() => {
+    if (!token || !effectiveId) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      const param = isAdmin && effectiveId !== myId ? `&for_user_id=${effectiveId}` : '';
-      const res = await fetch(`${API}/timesheet/my-calendar?year=${year}&month=${month}${param}`, { headers: aH(token) });
-      if (res.ok) setCalData(await res.json());
-      else setError(`API error ${res.status}: ${await res.text()}`);
-    } catch (ex) { setError(String(ex)); }
-    finally { setLoading(false); }
-  }, [token, year, month, effectiveId, isAdmin, myId]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+    const param = isAdmin && effectiveId !== myId ? `&for_user_id=${effectiveId}` : '';
+    fetch(`${API}/timesheet/my-calendar?year=${year}&month=${month}${param}`, { headers: aH(token) })
+      .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(`${r.status}: ${t}`); }))
+      .then(d => { if (!cancelled) setCalData(d); })
+      .catch(ex => { if (!cancelled) setError(String(ex)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, year, month, effectiveId, isAdmin, myId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const prevMonth = () => { if (month === 1) { setYear(y => y-1); setMonth(12); } else setMonth(m => m-1); };
   const nextMonth = () => {
@@ -348,7 +345,7 @@ export default function MyAnalyticsPage() {
         <div className="flex items-center gap-3">
           {/* Admin user selector */}
           {isAdmin && adminUsers.length > 0 && (
-            <select value={effectiveId} onChange={e => setTargetId(e.target.value)}
+            <select value={effectiveId} onChange={e => { setTargetId(e.target.value); setCalData(null); }}
               className="px-3 py-2 rounded-lg text-sm focus:outline-none"
               style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, minWidth: 220 }}>
               {adminUsers.map(u => (
@@ -371,7 +368,7 @@ export default function MyAnalyticsPage() {
             style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
             Next →
           </button>
-          <button onClick={fetchData} disabled={loading}
+          <button onClick={() => setRefreshKey(k => k + 1)} disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
             style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>
             <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}

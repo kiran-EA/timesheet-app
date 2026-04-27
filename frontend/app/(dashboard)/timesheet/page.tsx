@@ -766,7 +766,7 @@ export default function TimesheetPage() {
                   : <TaskTable tasks={sprintTasks} onLog={openModal} loggedKeys={loggedTaskKeys} showAssignee={isAdmin} assigneeLabel={isViewingOther ? (targetUser?.full_name ?? undefined) : undefined} />
               )}
               {activeTab === 'available' && <TaskTable tasks={availableTasks} onLog={openModal} loggedKeys={loggedTaskKeys} showAssignee={isAdmin} assigneeLabel={isViewingOther ? (targetUser?.full_name ?? undefined) : undefined} />}
-              {activeTab === 'general'   && <TaskTable tasks={activeGeneral}   onLog={openModal} loggedKeys={loggedTaskKeys} simple />}
+              {activeTab === 'general'   && <TaskTable tasks={activeGeneral}   onLog={openModal} simple />}
             </>
           )}
         </div>
