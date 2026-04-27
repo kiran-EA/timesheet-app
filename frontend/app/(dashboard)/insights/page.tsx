@@ -144,7 +144,7 @@ function EpicRow({ epic, userColorMap, borderTop }: {
       {/* Proportional user bars */}
       <div className="flex-1 h-10 rounded-xl overflow-hidden flex"
         style={{
-          background: total > 0 ? 'transparent' : (t.colorScheme === 'dark' ? 'rgba(15,23,42,0.3)' : '#f1f5f9'),
+          background: total > 0 ? 'transparent' : t.tableHead,
           border: `1px solid ${t.borderColor}`,
         }}>
         {total > 0 ? (
@@ -206,7 +206,7 @@ function SpaceSection({ space, userColorMap, accent }: {
 
       {/* Column header row */}
       <div className="flex items-center gap-5 px-6 py-2"
-        style={{ borderBottom: `1px solid ${t.borderColor}`, background: t.colorScheme === 'dark' ? 'rgba(15,23,42,0.25)' : 'rgba(241,245,249,0.6)' }}>
+        style={{ borderBottom: `1px solid ${t.borderColor}`, background: t.tableHead }}>
         <div className="w-52 flex-shrink-0 text-xs font-semibold uppercase tracking-wider" style={{ color: t.textSubtle }}>
           Epic / Project
         </div>
@@ -428,7 +428,7 @@ export default function InsightsPage() {
 
             {/* Active / Complete tabs */}
             <div className="flex items-center gap-1 p-1 rounded-xl w-fit"
-              style={{ background: t.colorScheme === 'dark' ? 'rgba(15,23,42,0.6)' : '#f1f5f9', border: t.border }}>
+              style={{ background: t.tableHead, border: t.border }}>
               {([
                 { id: 'active',   label: 'Active Epics',    dot: '#10b981' },
                 { id: 'complete', label: 'Completed Epics',  dot: '#64748b' },
