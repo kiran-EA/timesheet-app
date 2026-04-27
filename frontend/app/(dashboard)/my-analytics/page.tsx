@@ -269,31 +269,53 @@ function MonthSummary({ year, month, dayMap, today }: {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+interface AdminUser { user_id: string; full_name: string; email: string; }
+
 export default function MyAnalyticsPage() {
-  const token = useAuthStore((s) => s.token) ?? '';
+  const token    = useAuthStore((s) => s.token) ?? '';
+  const authUser = useAuthStore((s) => s.user);
+  const isAdmin  = authUser?.role === 'admin';
+  const myId     = authUser?.id ?? '';
 
   const now   = new Date();
-  const [year,  setYear]  = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [calData, setCalData] = useState<CalendarData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [year,       setYear]       = useState(now.getFullYear());
+  const [month,      setMonth]      = useState(now.getMonth() + 1);
+  const [calData,    setCalData]    = useState<CalendarData | null>(null);
+  const [loading,    setLoading]    = useState(false);
+  const [mounted,    setMounted]    = useState(false);
+  const [error,      setError]      = useState<string | null>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [targetId,   setTargetId]   = useState('');
 
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
   useEffect(() => { setMounted(true); }, []);
 
+  useEffect(() => {
+    if (!isAdmin || !token) return;
+    fetch(`${API}/users/all`, { headers: aH(token) })
+      .then(r => r.ok ? r.json() : { users: [] })
+      .then(d => {
+        setAdminUsers(d.users ?? []);
+        if (!targetId) setTargetId(myId);
+      })
+      .catch(() => {});
+  }, [isAdmin, token, myId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const effectiveId = isAdmin ? (targetId || myId) : myId;
+
   const fetchData = useCallback(async () => {
+    if (!effectiveId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/timesheet/my-calendar?year=${year}&month=${month}`, { headers: aH(token) });
+      const param = isAdmin && effectiveId !== myId ? `&for_user_id=${effectiveId}` : '';
+      const res = await fetch(`${API}/timesheet/my-calendar?year=${year}&month=${month}${param}`, { headers: aH(token) });
       if (res.ok) setCalData(await res.json());
       else setError(`API error ${res.status}: ${await res.text()}`);
     } catch (ex) { setError(String(ex)); }
     finally { setLoading(false); }
-  }, [token, year, month]);
+  }, [token, year, month, effectiveId, isAdmin, myId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -310,6 +332,8 @@ export default function MyAnalyticsPage() {
   if (calData) calData.days.forEach((d) => { dayMap[d.date] = d; });
 
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+  const viewingUser = adminUsers.find(u => u.user_id === effectiveId);
+  const viewingName = effectiveId === myId ? 'My Analytics' : (viewingUser?.full_name ?? 'Analytics');
 
   return (
     <div className="flex flex-col h-full" style={{ background: t.pageBg }}>
@@ -318,10 +342,22 @@ export default function MyAnalyticsPage() {
       <div className="flex items-center justify-between px-8 h-[70px] flex-shrink-0"
         style={{ background: t.headerBg, borderBottom: t.border }}>
         <div>
-          <h2 className="text-xl font-semibold" style={{ color: t.text }}>My Analytics</h2>
-          <p className="text-sm" style={{ color: t.textMuted }}>Your personal timesheet calendar — hover a day for details</p>
+          <h2 className="text-xl font-semibold" style={{ color: t.text }}>{viewingName}</h2>
+          <p className="text-sm" style={{ color: t.textMuted }}>Timesheet calendar — hover a day for details</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Admin user selector */}
+          {isAdmin && adminUsers.length > 0 && (
+            <select value={effectiveId} onChange={e => setTargetId(e.target.value)}
+              className="px-3 py-2 rounded-lg text-sm focus:outline-none"
+              style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, minWidth: 220 }}>
+              {adminUsers.map(u => (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.full_name} ({u.email}){u.user_id === myId ? ' — Me' : ''}
+                </option>
+              ))}
+            </select>
+          )}
           <button onClick={prevMonth}
             className="px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
             style={{ border: t.border, color: t.textMuted, background: 'transparent' }}>

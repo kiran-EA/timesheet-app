@@ -156,16 +156,20 @@ async def get_stats(
 
 @router.get("/my-calendar")
 async def get_my_calendar(
-    year:  int = None,
-    month: int = None,
+    year:        int = None,
+    month:       int = None,
+    for_user_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Calendar view: per-day hours + space breakdown for the current user."""
+    """Calendar view: per-day hours + space breakdown for the current (or specified) user."""
+    user_id = current_user["sub"]
+    if for_user_id and current_user.get("role") == "admin":
+        user_id = for_user_id
     from datetime import date as dt
     today = dt.today()
     y = year  or today.year
     m = month or today.month
-    rows = queries.get_my_calendar_data(current_user["sub"], y, m)
+    rows = queries.get_my_calendar_data(user_id, y, m)
 
     # Aggregate: { date -> { total, spaces: {space_key: hours} } }
     day_map: dict = {}
