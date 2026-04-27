@@ -222,7 +222,15 @@ async def get_epic_dashboard(
     visible_tasks = [t for t in jira_tasks if t["key"] in active_keys] if sprint_only else jira_tasks
 
     # ── 2. Build epic_meta: epic_key → {name, tasks} ─────────────────────────
-    epic_meta: dict = {e["key"]: {"name": e["name"], "status": e.get("status", ""), "tasks": []} for e in epics_list}
+    epic_meta: dict = {
+        e["key"]: {
+            "name": e["name"],
+            "status": e.get("status", ""),
+            "story_points": e.get("story_points"),
+            "tasks": [],
+        }
+        for e in epics_list
+    }
     for task in visible_tasks:
         ek = task.get("epic")
         if not ek:
@@ -320,7 +328,8 @@ async def get_epic_dashboard(
         epic_tasks   = meta["tasks"]
         all_for_epic = [t for t in jira_tasks if t.get("epic") == epic_key]
         active_cnt   = sum(1 for t in all_for_epic if t["key"] in active_keys)
-        total_est    = round(sum((t.get("story_points") or 0) * 8 * 1.2 for t in epic_tasks), 2)
+        epic_sp   = meta.get("story_points")
+        total_est = round(epic_sp * 8, 2) if epic_sp is not None else 0
         visible_keys = {t["key"] for t in epic_tasks}
         db_epic      = db_by_epic.get(epic_key, {})
 

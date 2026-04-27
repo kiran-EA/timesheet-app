@@ -382,24 +382,27 @@ class JiraService:
 
     def get_all_open_epics(self) -> list:
         """Fetch all Epic-type issues across all projects.
-        Returns list of {key, name, status}."""
+        Returns list of {key, name, status, story_points}."""
         try:
             jql = "issuetype = Epic ORDER BY updated DESC"
-            fields = ["summary", "status", "assignee", "customfield_10020"]
+            fields = ["summary", "status", "assignee", "customfield_10020",
+                      "customfield_10016", "customfield_10028"]  # story points
             issues = self._fetch_paginated_jql(jql, fields, timeout=15)
 
             epics = []
             for issue in issues:
-                fields = issue.get("fields", {})
+                f = issue.get("fields", {})
                 sprint_name = None
-                sprints = fields.get("customfield_10020") or []
+                sprints = f.get("customfield_10020") or []
                 if isinstance(sprints, list) and sprints:
                     sprint_name = sprints[-1].get("name")
+                sp = f.get("customfield_10016") or f.get("customfield_10028")
                 epics.append({
-                    "key":    issue["key"],
-                    "name":   fields.get("summary", ""),
-                    "status": fields.get("status", {}).get("name", "Unknown"),
-                    "sprint": sprint_name,
+                    "key":          issue["key"],
+                    "name":         f.get("summary", ""),
+                    "status":       f.get("status", {}).get("name", "Unknown"),
+                    "sprint":       sprint_name,
+                    "story_points": float(sp) if sp is not None else None,
                 })
             print(f"get_all_open_epics: found {len(epics)} epics")
             return epics
