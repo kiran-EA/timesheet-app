@@ -178,6 +178,7 @@ def get_all_users_with_details() -> list:
     """Admin: all active users with manager name and subordinate count."""
     return execute_query("""
         SELECT u.user_id, u.email, u.full_name, u.role, u.avatar, u.manager_id,
+               COALESCE(u.google_auth_enabled, false) AS google_auth_enabled,
                m.full_name AS manager_name,
                (SELECT COUNT(*) FROM users r
                 WHERE r.manager_id = u.user_id AND r.is_active = true) AS resource_count
@@ -205,6 +206,21 @@ def update_user_role_and_manager(user_id: str, role: str, manager_id: str = None
     execute_query(
         "UPDATE users SET role = %s, manager_id = %s WHERE user_id = %s",
         (role, manager_id, user_id), fetch_all=False
+    )
+
+
+# ── Google Auth queries ─────────────────────────────────────────────────────────
+
+def toggle_google_auth(user_id: str, enabled: bool):
+    execute_query(
+        "UPDATE users SET google_auth_enabled = %s WHERE user_id = %s",
+        (enabled, user_id), fetch_all=False
+    )
+
+def set_google_id(user_id: str, google_id: str):
+    execute_query(
+        "UPDATE users SET google_id = %s WHERE user_id = %s",
+        (google_id, user_id), fetch_all=False
     )
 
 

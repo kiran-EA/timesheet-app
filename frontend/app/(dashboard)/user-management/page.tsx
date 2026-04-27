@@ -19,6 +19,7 @@ interface User {
   manager_id: string | null;
   manager_name: string | null;
   resource_count: number;
+  google_auth_enabled: boolean;
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -440,12 +441,52 @@ function MemberChips({
   );
 }
 
+// ── Google Auth Toggle ────────────────────────────────────────────────────────
+function GoogleToggle({ user, token, currentUserId, onChange }: {
+  user: User; token: string; currentUserId: string;
+  onChange: (uid: string, val: boolean) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const isSelf = user.user_id === currentUserId;
+
+  const handleToggle = async () => {
+    if (isSelf || loading) return;
+    setLoading(true);
+    const next = !user.google_auth_enabled;
+    try {
+      await fetch(`${API}/users/${user.user_id}/google-auth`, {
+        method: 'PATCH', headers: authHeaders(token),
+        body: JSON.stringify({ enabled: next }),
+      });
+      onChange(user.user_id, next);
+    } finally { setLoading(false); }
+  };
+
+  const on = user.google_auth_enabled;
+  return (
+    <button onClick={handleToggle} disabled={isSelf || loading}
+      title={isSelf ? 'Cannot change your own account' : on ? 'Disable Google auth' : 'Enable Google auth'}
+      className="flex items-center gap-2 transition-opacity disabled:opacity-40"
+      style={{ opacity: loading ? 0.5 : 1 }}>
+      <div className="relative w-9 h-5 rounded-full transition-colors"
+        style={{ background: on ? '#10b981' : '#374151' }}>
+        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+          style={{ left: on ? '18px' : '2px' }} />
+      </div>
+      <span className="text-xs font-medium" style={{ color: on ? '#10b981' : t.textSubtle }}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
+}
+
 // ── User table section (by role) ──────────────────────────────────────────────
 function UserSection({
-  title, users, allUsers, token, onEdit, onUnassigned, showMembers,
+  title, users, allUsers, token, currentUserId, onEdit, onUnassigned, showMembers, onGoogleToggle,
 }: {
-  title: string; users: User[]; allUsers: User[]; token: string;
+  title: string; users: User[]; allUsers: User[]; token: string; currentUserId: string;
   onEdit: (u: User) => void; onUnassigned: (uid: string) => void; showMembers: boolean;
+  onGoogleToggle: (uid: string, val: boolean) => void;
 }) {
   if (users.length === 0) return null;
   return (
@@ -460,7 +501,7 @@ function UserSection({
       <table className="w-full text-sm">
         <thead style={{ background: t.tableHead }}>
           <tr>
-            {['User', 'Email', 'Role', showMembers ? 'Members' : 'Manager', 'Configure'].map((h) => (
+            {['User', 'Email', 'Role', showMembers ? 'Members' : 'Manager', 'Google Auth', 'Configure'].map((h) => (
               <th key={h} className="px-5 py-3 text-left font-semibold"
                 style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11,
                   textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -493,6 +534,9 @@ function UserSection({
                 ) : (
                   <span style={{ color: t.textSubtle }}>—</span>
                 )}
+              </td>
+              <td className="px-5 py-3.5">
+                <GoogleToggle user={user} token={token} currentUserId={currentUserId} onChange={onGoogleToggle} />
               </td>
               <td className="px-5 py-3.5">
                 <button onClick={() => onEdit(user)}
@@ -531,10 +575,15 @@ export default function UserManagementPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  // Optimistic unassign: set manager_id = null for that resource in local state
   const handleUnassigned = (uid: string) => {
     setUsers((prev) => prev.map((u) =>
       u.user_id === uid ? { ...u, manager_id: null, manager_name: null } : u,
+    ));
+  };
+
+  const handleGoogleToggle = (uid: string, val: boolean) => {
+    setUsers((prev) => prev.map((u) =>
+      u.user_id === uid ? { ...u, google_auth_enabled: val } : u,
     ));
   };
 
@@ -612,15 +661,18 @@ export default function UserManagementPage() {
           <>
             <UserSection
               title="Admins" users={admins} allUsers={users} token={token}
-              onEdit={setEditing} onUnassigned={handleUnassigned} showMembers
+              currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
+              showMembers onGoogleToggle={handleGoogleToggle}
             />
             <UserSection
               title="Teamleads" users={teamleads} allUsers={users} token={token}
-              onEdit={setEditing} onUnassigned={handleUnassigned} showMembers
+              currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
+              showMembers onGoogleToggle={handleGoogleToggle}
             />
             <UserSection
               title="Resources" users={resources} allUsers={users} token={token}
-              onEdit={setEditing} onUnassigned={handleUnassigned} showMembers={false}
+              currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
+              showMembers={false} onGoogleToggle={handleGoogleToggle}
             />
           </>
         )}

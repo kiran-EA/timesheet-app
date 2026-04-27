@@ -90,6 +90,24 @@ async def unassign_resource(resource_id: str, current_user: dict = Depends(get_c
     return {"status": "unassigned"}
 
 
+class GoogleAuthToggleBody(BaseModel):
+    enabled: bool
+
+
+@router.patch("/{user_id}/google-auth")
+async def toggle_google_auth(
+    user_id: str,
+    body: GoogleAuthToggleBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only: enable/disable Google auth for a user. Admin cannot toggle their own account."""
+    require_admin(current_user)
+    if user_id == current_user["sub"]:
+        raise HTTPException(status_code=400, detail="You cannot change your own Google auth setting")
+    queries.toggle_google_auth(user_id, body.enabled)
+    return {"user_id": user_id, "google_auth_enabled": body.enabled}
+
+
 class ConfigureUserBody(BaseModel):
     role: str
     manager_id: Optional[str] = None

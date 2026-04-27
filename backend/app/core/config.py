@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "service-account.json"
     GOOGLE_SERVICE_ACCOUNT_CONTENT: str = ""   # JSON string — used on Render instead of file
     GOOGLE_ADMIN_EMAIL: str = ""               # org admin email for impersonation
+
+    # Google Login OAuth (separate from Calendar OAuth)
+    GOOGLE_LOGIN_CLIENT_ID: str = ""
+    GOOGLE_LOGIN_CLIENT_SECRET: str = ""
+    GOOGLE_LOGIN_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
     
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

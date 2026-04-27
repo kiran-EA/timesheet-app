@@ -47,13 +47,16 @@ async def write_service_account():
 async def run_migrations():
     """Add new columns that may not exist in the live DB yet."""
     from app.db.database import execute_query
-    try:
-        execute_query(
-            "ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS epic VARCHAR(200)",
-            fetch_all=False,
-        )
-    except Exception as e:
-        print(f"Migration warning: {e}")
+    migrations = [
+        "ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS epic VARCHAR(200)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_auth_enabled BOOLEAN DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)",
+    ]
+    for sql in migrations:
+        try:
+            execute_query(sql, fetch_all=False)
+        except Exception as e:
+            print(f"Migration warning: {e}")
 
 
 @app.get("/")
