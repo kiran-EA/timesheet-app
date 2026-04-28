@@ -77,7 +77,8 @@ function EntryTable({
     return <div className="text-center py-8 text-sm" style={{ color: t.textSubtle }}>No entries.</div>;
 
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+    <table className="w-full text-sm" style={{ minWidth: 680 }}>
       <thead style={{ background: t.tableHead }}>
         <tr>
           {['Date', 'Task', 'Title', 'Work Done', 'Hours', 'Status', ...(showResubmit ? ['Action'] : [])].map((h) => (
@@ -141,6 +142,7 @@ function EntryTable({
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -285,7 +287,8 @@ export default function AllEntriesPage() {
       </div>
 
       {/* ── Content ───────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {/* ── Date range filter ────────────────────────────────────────── */}
         <div className="flex items-center gap-4 px-5 py-4 rounded-xl"
@@ -318,7 +321,7 @@ export default function AllEntriesPage() {
         </div>
 
         {/* ── Summary stat cards ───────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           {[
             { label: 'Total',       value: filtered.length,  icon: '📋', color: 'rgba(59,130,246,0.15)',  text: '#3b82f6' },
             { label: 'Pending',     value: pending.length,   icon: '⏳', color: 'rgba(245,158,11,0.15)', text: '#d97706' },
@@ -380,6 +383,7 @@ export default function AllEntriesPage() {
             />
           </>
         )}
+      </div>
       </div>
 
       {/* ── Resubmit Modal ───────────────────────────────────────────────── */}

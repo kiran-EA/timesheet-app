@@ -100,7 +100,8 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
-      <table className="w-full text-sm border-collapse">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse" style={{ minWidth: simple ? 480 : 860 }}>
         <thead style={{ background: t.tableHead }}>
           <tr>
             {headers.map((h) => (
@@ -221,6 +222,7 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -559,7 +561,7 @@ export default function TimesheetPage() {
             {isViewingOther ? targetUser?.email : 'Track your time and manage your tasks'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           {/* Admin: user selector — all users including admin */}
           {isAdmin && (
             <select value={targetUserId} onChange={(e) => handleTargetUserChange(e.target.value)}
@@ -582,7 +584,8 @@ export default function TimesheetPage() {
       </div>
 
       {/* ── Content ────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {syncMsg && (
           <div className="flex items-center gap-3 px-4 py-3.5 rounded-lg text-sm font-medium"
@@ -616,7 +619,7 @@ export default function TimesheetPage() {
         )}
 
         {/* ── Stats ────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
           {[
             { title: 'This Week',       value: `${Number(activeWeekHours).toFixed(1)}h`,   icon: '🕐', color: 'rgba(59,130,246,0.15)'  },
             { title: 'Tasks Active',    value: `${activeTasks.length}`,                    icon: '📋', color: 'rgba(139,92,246,0.15)' },
@@ -660,7 +663,8 @@ export default function TimesheetPage() {
             </div>
           ) : (
             <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
-              <table className="w-full text-sm border-collapse">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse" style={{ minWidth: 640 }}>
                 <thead style={{ background: t.tableHead }}>
                   <tr>
                     {['Task No', 'Description', 'Work Done', 'Hours', 'Status', 'Actions'].map((h) => (
@@ -732,6 +736,7 @@ export default function TimesheetPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -772,6 +777,7 @@ export default function TimesheetPage() {
         </div>
 
 
+      </div>
       </div>
 
       {/* ── Log Time Modal ────────────────────────────────────────────────── */}

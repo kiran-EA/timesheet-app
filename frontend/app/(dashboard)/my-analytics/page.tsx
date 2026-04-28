@@ -237,7 +237,7 @@ function MonthSummary({ year, month, dayMap, today }: {
   const topSpaces = Object.entries(spaceTotal).sort((a, b) => b[1] - a[1]).slice(0, 6);
 
   return (
-    <div className="grid grid-cols-4 gap-4 mt-6">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
       {[
         { label: 'Total Hours',      value: `${totalHours.toFixed(1)}h`, color: '#3b82f6' },
         { label: 'Full Days (8h+)',  value: greenDays,                   color: '#10b981' },
@@ -382,6 +382,7 @@ export default function MyAnalyticsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto">
         {error && (
           <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
             {error}
@@ -404,6 +405,7 @@ export default function MyAnalyticsPage() {
             <MonthSummary year={year} month={month} dayMap={dayMap} today={today} />
           </div>
         )}
+      </div>
       </div>
     </div>
   );

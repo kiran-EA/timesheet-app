@@ -374,7 +374,8 @@ function ResourceSection({
         </span>
       </div>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm" style={{ minWidth: 820 }}>
         <thead style={{ background: t.tableHead }}>
           <tr>
             <th className="w-8 px-4 py-3" />
@@ -492,6 +493,7 @@ function ResourceSection({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1265,7 +1267,7 @@ export default function ReportsPage() {
           <h2 className="text-xl font-semibold" style={{ color: t.text }}>Analytics</h2>
           <p className="text-sm" style={{ color: t.textMuted }}>{roleLabel} — timesheet insights</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           {/* tab switcher — admin only */}
           {user?.role === 'admin' && (
             <div className="flex rounded-lg overflow-hidden" style={{ border: t.border }}>
@@ -1327,7 +1329,8 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {/* ── Custom date range ── */}
         {preset === 'custom' && (
@@ -1370,7 +1373,7 @@ export default function ReportsPage() {
             </p>
 
             {/* ── Summary stats ── */}
-            <div className="grid grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
               {[
                 { title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, icon: '🕐', color: 'rgba(59,130,246,0.15)' },
                 { title: 'Total Entries',      value: totalEntries,                         icon: '📝', color: 'rgba(139,92,246,0.15)' },
@@ -1420,6 +1423,7 @@ export default function ReportsPage() {
           </>
         )}
 
+      </div>
       </div>
     </div>
   );

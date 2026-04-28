@@ -166,7 +166,8 @@ export default function CalendarPage() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
         <div className="flex items-end gap-4">
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: t.textMuted }}>Select Date</label>
@@ -227,7 +228,8 @@ export default function CalendarPage() {
                   </div>
 
                   {/* Table */}
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-sm" style={{ minWidth: 760 }}>
                     <thead style={{ background: t.tableHead }}>
                       <tr>
                         {['Time', 'Event Title', 'Task', 'Work Description', 'Hours', 'Status', ''].map((h) => (
@@ -296,11 +298,13 @@ export default function CalendarPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

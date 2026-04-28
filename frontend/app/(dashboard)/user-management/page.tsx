@@ -498,7 +498,8 @@ function UserSection({
           {users.length}
         </span>
       </div>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm" style={{ minWidth: 680 }}>
         <thead style={{ background: t.tableHead }}>
           <tr>
             {['User', 'Email', 'Role', showMembers ? 'Members' : 'Manager', 'Google Auth', 'Configure'].map((h) => (
@@ -549,6 +550,7 @@ function UserSection({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -639,7 +641,8 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {/* Summary cards */}
         <div className="grid grid-cols-3 gap-4">
@@ -676,6 +679,7 @@ export default function UserManagementPage() {
             />
           </>
         )}
+      </div>
       </div>
 
       {editing && (

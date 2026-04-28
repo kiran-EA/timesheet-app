@@ -404,7 +404,8 @@ export default function InsightsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {/* Custom date pickers */}
         {preset === 'custom' && (
@@ -444,7 +445,7 @@ export default function InsightsPage() {
         ) : (
           <>
             {/* Stat cards */}
-            <div className="grid grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
               {[
                 { title: 'Total Hours Logged', value: `${totalHours.toFixed(1)}h`, icon: '🕐', accent: '#3b82f6' },
                 { title: 'Active Members',     value: totalMembers,                 icon: '👥', accent: '#8b5cf6' },
@@ -531,6 +532,7 @@ export default function InsightsPage() {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

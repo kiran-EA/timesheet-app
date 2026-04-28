@@ -146,7 +146,7 @@ export default function ApprovalsPage() {
           <h2 className="text-xl font-semibold" style={{ color: t.text }}>Approvals</h2>
           <p className="text-sm" style={{ color: t.textMuted }}>Review and approve timesheet entries from your team</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           <input type="date" value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-4 py-2 rounded-lg text-sm focus:outline-none"
@@ -180,7 +180,8 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
 
         {/* Success */}
         {successMsg && (
@@ -272,7 +273,8 @@ export default function ApprovalsPage() {
               </div>
 
               {/* Entries table */}
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: 620 }}>
                 <thead style={{ background: t.tableHead }}>
                   <tr>
                     {['Date', 'Task', 'Work Done', 'Hours', 'Status', 'Actions'].map((h) => (
@@ -321,9 +323,11 @@ export default function ApprovalsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ))
         )}
+      </div>
       </div>
 
       {/* Confirm Approve All Modal */}
