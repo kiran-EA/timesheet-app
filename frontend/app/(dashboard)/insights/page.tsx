@@ -206,17 +206,17 @@ function EpicRow({ epic, userColorMap, borderTop }: {
 function SpaceSection({ space, userColorMap, accent }: {
   space: Space; userColorMap: Record<string, string>; accent: string;
 }) {
+  const [collapsed, setCollapsed] = useState(true);
   const totalH = space.epics.reduce((s, e) => s + e.total_logged_hours, 0);
 
   return (
     <div className="rounded-2xl overflow-hidden shadow-sm"
       style={{ background: t.cardBg, border: `1px solid ${accent}40` }}>
-      {/* Space header */}
-      <div className="px-6 py-4 flex items-center justify-between"
-        style={{
-          background: `linear-gradient(90deg, ${accent}18, transparent)`,
-          borderBottom: `1px solid ${accent}25`,
-        }}>
+      {/* Space header — clickable to toggle */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full px-6 py-4 flex items-center justify-between text-left transition-opacity hover:opacity-90"
+        style={{ background: `linear-gradient(90deg, ${accent}18, transparent)` }}>
         <div className="flex items-center gap-3">
           <div className="w-1.5 h-9 rounded-full flex-shrink-0" style={{ background: `linear-gradient(to bottom, ${accent}, ${accent}66)` }} />
           <div>
@@ -228,46 +228,58 @@ function SpaceSection({ space, userColorMap, accent }: {
         </div>
         <div className="flex items-center gap-8">
           {[
-            { val: space.epics.length,       label: 'epics' },
-            { val: space.member_count,        label: 'members' },
-            { val: totalH.toFixed(1) + 'h',  label: 'total logged' },
+            { val: space.epics.length,      label: 'epics' },
+            { val: space.member_count,       label: 'members' },
+            { val: totalH.toFixed(1) + 'h', label: 'total logged' },
           ].map(s => (
             <div key={s.label} className="text-right">
               <div className="text-sm font-bold" style={{ color: t.text }}>{s.val}</div>
               <div className="text-xs" style={{ color: t.textSubtle }}>{s.label}</div>
             </div>
           ))}
+          {/* Chevron */}
+          <svg
+            className="w-4 h-4 flex-shrink-0 transition-transform duration-200"
+            style={{ color: t.textSubtle, transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </div>
-      </div>
+      </button>
 
-      {/* Column header row */}
-      <div className="flex items-center gap-5 px-6 py-2"
-        style={{ borderBottom: `1px solid ${t.borderColor}`, background: t.tableHead }}>
-        <div className="w-52 flex-shrink-0 text-xs font-semibold uppercase tracking-wider" style={{ color: t.textSubtle }}>
-          Epic / Project
-        </div>
-        <div className="flex-1 text-xs font-semibold uppercase tracking-wider" style={{ color: t.textSubtle }}>
-          Team Contribution — hover each bar for hours
-        </div>
-      </div>
-
-      {/* Epic rows */}
-      <div className="px-6">
-        {space.epics.length === 0 ? (
-          <div className="py-10 text-center text-sm" style={{ color: t.textSubtle }}>
-            No epics in this space
+      {/* Collapsible body */}
+      {!collapsed && (
+        <>
+          {/* Column header row */}
+          <div className="flex items-center gap-5 px-6 py-2"
+            style={{ borderTop: `1px solid ${accent}25`, borderBottom: `1px solid ${t.borderColor}`, background: t.tableHead }}>
+            <div className="w-52 flex-shrink-0 text-xs font-semibold uppercase tracking-wider" style={{ color: t.textSubtle }}>
+              Epic / Project
+            </div>
+            <div className="flex-1 text-xs font-semibold uppercase tracking-wider" style={{ color: t.textSubtle }}>
+              Team Contribution — hover each bar for hours
+            </div>
           </div>
-        ) : (
-          space.epics.map((epic, idx) => (
-            <EpicRow
-              key={epic.epic_key ?? `no-epic-${idx}`}
-              epic={epic}
-              userColorMap={userColorMap}
-              borderTop={idx > 0}
-            />
-          ))
-        )}
-      </div>
+
+          {/* Epic rows */}
+          <div className="px-6">
+            {space.epics.length === 0 ? (
+              <div className="py-10 text-center text-sm" style={{ color: t.textSubtle }}>
+                No epics in this space
+              </div>
+            ) : (
+              space.epics.map((epic, idx) => (
+                <EpicRow
+                  key={epic.epic_key ?? `no-epic-${idx}`}
+                  epic={epic}
+                  userColorMap={userColorMap}
+                  borderTop={idx > 0}
+                />
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
