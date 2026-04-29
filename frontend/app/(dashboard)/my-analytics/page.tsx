@@ -214,7 +214,7 @@ function TeamCalendarGrid({ year, month, dayMap, today }: {
           const isFuture  = dateStr > today;
           const isWeekend = i % 7 >= 5;
 
-          let bg = 'rgba(100,116,139,0.06)', textColor = t.textMuted, borderColor = 'transparent';
+          let bg = 'rgba(100,116,139,0.06)', borderColor = 'transparent';
           let countColor = t.textSubtle;
           let showCount  = false;
 
@@ -222,17 +222,16 @@ function TeamCalendarGrid({ year, month, dayMap, today }: {
             showCount = true;
             if (data.all_filled) {
               bg = 'rgba(16,185,129,0.15)'; borderColor = 'rgba(16,185,129,0.35)';
-              textColor = '#e2e8f0'; countColor = '#000000';
+              countColor = '#000000';
             } else {
               bg = 'rgba(239,68,68,0.12)'; borderColor = 'rgba(239,68,68,0.3)';
-              textColor = '#e2e8f0'; countColor = '#ef4444';
+              countColor = '#c0392b';
             }
           } else if (!isFuture && !isWeekend) {
             bg = 'rgba(239,68,68,0.06)'; borderColor = 'rgba(239,68,68,0.15)';
-            showCount = true; countColor = '#ef4444';
+            showCount = true; countColor = '#c0392b';
           }
           if (isToday) borderColor = '#3b82f6';
-          if (isWeekend) textColor = '#4a5568';
 
           const filled = data?.filled_count ?? 0;
           const total  = data?.total_users  ?? 0;
@@ -244,7 +243,7 @@ function TeamCalendarGrid({ year, month, dayMap, today }: {
               onMouseEnter={(!isFuture && !isWeekend && data) ? e => setTooltip({ day: data, x: e.clientX, y: e.clientY }) : undefined}
               onMouseMove={(!isFuture && !isWeekend && data)  ? e => setTooltip({ day: data, x: e.clientX, y: e.clientY }) : undefined}
               onMouseLeave={() => setTooltip(null)}>
-              <p className="text-xs font-bold mb-1" style={{ color: textColor }}>
+              <p className="text-xs font-bold mb-1" style={{ color: isWeekend ? '#94a3b8' : '#1e293b' }}>
                 {day}{isToday && <span className="ml-1.5 px-1 py-0.5 rounded text-[9px]" style={{ background: '#3b82f6', color: '#fff' }}>TODAY</span>}
               </p>
               {showCount && total > 0 && (
