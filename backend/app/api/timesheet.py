@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import date, timedelta
+import datetime as _dt
+import calendar as _cal
+from collections import defaultdict
 from typing import Optional
 from pydantic import BaseModel
 from app.core.security import get_current_user
@@ -152,6 +155,55 @@ async def get_stats(
     week_end = week_start + timedelta(days=6)
     week_hours = queries.get_week_hours(user_id, str(week_start), str(week_end))
     return {"week_hours": week_hours}
+
+
+@router.get("/team-calendar")
+async def get_team_calendar(
+    year:  int = None,
+    month: int = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only — per-day fill status for all active users."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    today = _dt.date.today()
+    y = year  or today.year
+    m = month or today.month
+    last_day = _cal.monthrange(y, m)[1]
+
+    users, entries = queries.get_team_calendar_data(y, m)
+    user_list = [dict(u) for u in users]
+    total_users = len(user_list)
+    user_name_map = {u["user_id"]: u["full_name"] for u in user_list}
+
+    # Build: date -> user_id -> hours
+    day_user: dict = defaultdict(lambda: defaultdict(float))
+    for e in entries:
+        day_user[e["date"]][e["user_id"]] += float(e["hours"])
+
+    days = []
+    for d in range(1, last_day + 1):
+        date_str = f"{y}-{m:02d}-{d:02d}"
+        dow = _dt.date(y, m, d).weekday()   # 0=Mon 6=Sun
+        is_weekend = dow >= 5
+        user_hours_map = day_user.get(date_str, {})
+        users_data = sorted(
+            [{"user_id": uid, "full_name": user_name_map[uid],
+              "hours": round(user_hours_map.get(uid, 0.0), 1)}
+             for uid in user_name_map],
+            key=lambda x: x["hours"], reverse=True,
+        )
+        filled_count = sum(1 for u in users_data if u["hours"] >= 8)
+        days.append({
+            "date":         date_str,
+            "is_weekend":   is_weekend,
+            "users":        users_data,
+            "filled_count": filled_count,
+            "total_users":  total_users,
+            "all_filled":   (not is_weekend) and total_users > 0 and filled_count == total_users,
+        })
+
+    return {"year": y, "month": m, "days": days}
 
 
 @router.get("/my-calendar")

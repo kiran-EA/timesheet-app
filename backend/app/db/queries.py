@@ -574,6 +574,30 @@ def get_insights_dow_pattern(start_date: str, end_date: str, space_key: str = No
     """, (start_date, end_date) + sp, fetch_all=True) or []
 
 
+def get_team_calendar_data(year: int, month: int) -> tuple:
+    """Admin: per-day hours for every active user in the given month."""
+    import calendar as _cal
+    last_day = _cal.monthrange(year, month)[1]
+    start = f"{year}-{month:02d}-01"
+    end   = f"{year}-{month:02d}-{last_day:02d}"
+    users = execute_query(
+        "SELECT user_id, full_name FROM users WHERE is_active = true ORDER BY full_name",
+        fetch_all=True,
+    ) or []
+    entries = execute_query("""
+        SELECT te.user_id,
+               te.entry_date::text AS date,
+               COALESCE(SUM(te.hours), 0) AS hours
+        FROM timesheet_entries te
+        JOIN users u ON u.user_id = te.user_id AND u.is_active = true
+        WHERE te.entry_date BETWEEN %s AND %s
+          AND te.status IN ('approved', 'pending', 'resubmitted', 'draft')
+        GROUP BY te.user_id, te.entry_date
+        ORDER BY te.entry_date, te.user_id
+    """, (start, end), fetch_all=True) or []
+    return users, entries
+
+
 def get_my_calendar_data(user_id: str, year: int, month: int) -> list:
     """Per-day hours + space breakdown for resource calendar view."""
     import calendar as _cal
