@@ -302,14 +302,14 @@ function MonthSummary({ year, month, dayMap, today }: {
   return (
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
       {[
-        { label: 'Total Hours',       value: `${totalHours.toFixed(1)}h`, color: '#3b82f6' },
-        { label: 'Full Days (8h+)',   value: greenDays,                   color: '#10b981' },
-        { label: 'Short Days (<8h)', value: redDays,                     color: '#ef4444' },
-        { label: 'Workdays Left',     value: Math.max(0, workdays - greenDays - redDays), color: '#f59e0b' },
+        { label: 'Total Hours',       value: `${totalHours.toFixed(1)}h`, color: '#1d4ed8' },
+        { label: 'Full Days (8h+)',   value: greenDays,                   color: '#059669' },
+        { label: 'Short Days (<8h)',  value: redDays,                     color: '#b91c1c' },
+        { label: 'Workdays Left',     value: Math.max(0, workdays - greenDays - redDays), color: '#b45309' },
       ].map(s => (
-        <div key={s.label} className="rounded-xl p-4 shadow-sm" style={{ background: t.cardBg, border: t.border }}>
-          <p className="text-xs font-medium mb-1" style={{ color: t.textMuted }}>{s.label}</p>
-          <p className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</p>
+        <div key={s.label} className="rounded-xl p-4 transition-shadow duration-300 hover:shadow-md" style={{ background: t.cardBg, border: t.border }}>
+          <p className="text-[11px] font-medium mb-1.5 tracking-tight" style={{ color: t.textMuted }}>{s.label}</p>
+          <p className="text-[24px] font-semibold tracking-tight tabular-nums" style={{ color: s.color }}>{s.value}</p>
         </div>
       ))}
       {topSpaces.length > 0 && (

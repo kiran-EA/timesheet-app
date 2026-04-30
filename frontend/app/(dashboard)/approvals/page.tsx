@@ -173,7 +173,7 @@ export default function ApprovalsPage() {
           {pendingCount > 0 && (
             <button onClick={() => setConfirmApproveAll(true)}
               className="px-5 py-2 rounded-lg text-white font-semibold text-sm hover:opacity-90 transition-opacity"
-              style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+              style={{ background: 'linear-gradient(135deg,#047857,#065f46)' }}>
               Approve All ({pendingCount})
             </button>
           )}
@@ -197,16 +197,25 @@ export default function ApprovalsPage() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-5">
           {[
-            { title: 'Pending Review',  value: pendingCount,     icon: '⏳', color: 'rgba(245,158,11,0.15)' },
-            { title: 'Resubmitted',     value: resubmittedCount, icon: '🔄', color: 'rgba(139,92,246,0.15)' },
-            { title: 'Team Members',    value: peopleCount,      icon: '👥', color: 'rgba(59,130,246,0.15)'  },
+            {
+              title: 'Pending Review', value: pendingCount, soft: 'rgba(180,83,9,0.10)', text: '#b45309',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>),
+            },
+            {
+              title: 'Resubmitted', value: resubmittedCount, soft: 'rgba(124,58,237,0.10)', text: '#6d28d9',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>),
+            },
+            {
+              title: 'Team Members', value: peopleCount, soft: 'rgba(29,78,216,0.10)', text: '#1d4ed8',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>),
+            },
           ].map((s) => (
-            <div key={s.title} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
+            <div key={s.title} className="rounded-xl p-5 transition-shadow duration-300 hover:shadow-md" style={{ background: t.statGrad, border: t.border }}>
               <div className="flex items-start justify-between mb-3">
-                <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
-                <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg" style={{ background: s.color }}>{s.icon}</span>
+                <span className="text-[12px] font-medium tracking-tight" style={{ color: t.textMuted }}>{s.title}</span>
+                <span className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: s.soft, color: s.text }}>{s.icon}</span>
               </div>
-              <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
+              <div className="text-[28px] font-semibold tracking-tight tabular-nums" style={{ color: t.text }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -215,10 +224,17 @@ export default function ApprovalsPage() {
         {loading ? (
           <div className="text-center py-16" style={{ color: t.textSubtle }}>Loading...</div>
         ) : entries.length === 0 ? (
-          <div className="rounded-xl p-16 text-center shadow-sm" style={{ background: t.cardBg, border: t.border }}>
-            <div className="text-5xl mb-3">✅</div>
-            <h3 className="text-lg font-semibold mb-1" style={{ color: t.text }}>All caught up!</h3>
-            <p className="text-sm" style={{ color: t.textMuted }}>No pending entries{dateFilter ? ' for this date' : ''}.</p>
+          <div className="rounded-2xl p-16 text-center" style={{ background: t.cardBg, border: t.border }}>
+            <div className="inline-flex w-14 h-14 items-center justify-center rounded-2xl mb-4 animate-float"
+              style={{ background: 'rgba(5,150,105,0.10)', color: '#059669' }}>
+              <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </div>
+            <h3 className="text-[18px] font-semibold tracking-tight mb-1" style={{ color: t.text }}>All caught up</h3>
+            <p className="text-[13.5px] leading-relaxed max-w-[36ch] mx-auto" style={{ color: t.textMuted }}>
+              No pending entries{dateFilter ? ' for this date' : ''}. Approvals will appear here as they come in.
+            </p>
           </div>
         ) : (
           Object.values(grouped).map(({ info, items }) => (
@@ -228,7 +244,7 @@ export default function ApprovalsPage() {
               <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: t.border, background: t.cardBg2 }}>
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                    style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+                    style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
                     {info.avatar || info.full_name[0]}
                   </div>
                   <div>
@@ -266,7 +282,7 @@ export default function ApprovalsPage() {
                   <button
                     onClick={() => setConfirmApproveUser({ userId: info.user_id, name: info.full_name, items })}
                     className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition-opacity"
-                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                    style={{ background: 'linear-gradient(135deg,#047857,#065f46)' }}>
                     Approve ({items.length})
                   </button>
                 </div>
@@ -309,7 +325,7 @@ export default function ApprovalsPage() {
                         <div className="flex items-center gap-2">
                           <button onClick={() => handleApprove(entry.id)}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition-opacity"
-                            style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                            style={{ background: 'linear-gradient(135deg,#047857,#065f46)' }}>
                             Approve
                           </button>
                           <button onClick={() => { setRejectTarget(entry); setRejectReason(''); }}
@@ -343,7 +359,7 @@ export default function ApprovalsPage() {
             <div className="flex gap-3">
               <button onClick={handleApproveAll}
                 className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 transition-opacity"
-                style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                style={{ background: 'linear-gradient(135deg,#047857,#065f46)' }}>
                 Confirm Approve All
               </button>
               <button onClick={() => setConfirmApproveAll(false)}
@@ -370,7 +386,7 @@ export default function ApprovalsPage() {
               <button onClick={() => handleApproveUser(confirmApproveUser.userId, confirmApproveUser.items)}
                 disabled={approvingUser}
                 className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
-                style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                style={{ background: 'linear-gradient(135deg,#047857,#065f46)' }}>
                 {approvingUser ? 'Approving…' : 'Confirm Approve'}
               </button>
               <button onClick={() => setConfirmApproveUser(null)} disabled={approvingUser}

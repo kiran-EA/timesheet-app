@@ -122,7 +122,7 @@ function AddUserModal({
                 <button key={r} onClick={() => setRole(r)}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold capitalize transition-all"
                   style={role === r
-                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                    ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }
                     : { border: t.border, color: t.textMuted, background: 'transparent' }}>
                   {r === 'teamlead' ? 'Teamlead' : r.charAt(0).toUpperCase() + r.slice(1)}
                 </button>
@@ -159,7 +159,7 @@ function AddUserModal({
           </button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+            style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
             {saving ? 'Creating…' : 'Create User'}
           </button>
         </div>
@@ -233,7 +233,7 @@ function ConfigureModal({
         <div className="flex items-start justify-between p-6" style={{ borderBottom: t.border }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }}>
+              style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }}>
               {user.avatar || user.full_name.slice(0, 2).toUpperCase()}
             </div>
             <div>
@@ -258,7 +258,7 @@ function ConfigureModal({
                 <button key={r} onClick={() => setRole(r)}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold capitalize transition-all"
                   style={role === r
-                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                    ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }
                     : { border: t.border, color: t.textMuted, background: 'transparent' }}>
                   {r === 'teamlead' ? 'Teamlead' : r.charAt(0).toUpperCase() + r.slice(1)}
                 </button>
@@ -348,7 +348,7 @@ function ConfigureModal({
                             onChange={() => toggleAdd(u.user_id)}
                             className="w-4 h-4 rounded accent-blue-500" />
                           <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold"
-                            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }}>
+                            style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }}>
                             {u.avatar || u.full_name.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="flex-1">
@@ -379,7 +379,7 @@ function ConfigureModal({
           </button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+            style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
@@ -517,7 +517,7 @@ function UserSection({
               <td className="px-5 py-3.5">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }}>
+                    style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }}>
                     {user.avatar || user.full_name.slice(0, 2).toUpperCase()}
                   </div>
                   <span className="font-medium text-sm" style={{ color: t.text }}>{user.full_name}</span>
@@ -632,7 +632,7 @@ export default function UserManagementPage() {
           </div>
           <button onClick={() => setAddingUser(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+            style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>

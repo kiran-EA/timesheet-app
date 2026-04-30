@@ -422,7 +422,7 @@ function ResourceSection({
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                        style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+                        style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
                         {r.avatar || r.full_name[0]}
                       </div>
                       <div>
@@ -830,7 +830,7 @@ function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, s
           <polyline points="9 18 15 12 9 6" />
         </svg>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+          style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
           {member.avatar || member.full_name[0]}
         </div>
         <div className="flex-1 min-w-0">
@@ -1275,7 +1275,7 @@ export default function ReportsPage() {
                 <button key={tab} onClick={() => handleTabSwitch(tab as Tab)}
                   className="px-4 py-2 text-sm font-medium transition-all"
                   style={activeTab === tab
-                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                    ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }
                     : { background: 'transparent', color: t.textMuted }}>
                   {label}
                 </button>
@@ -1320,7 +1320,7 @@ export default function ReportsPage() {
               <button key={p} onClick={() => applyPreset(p)}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
                 style={preset === p
-                  ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                  ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }
                   : { border: t.border, color: t.textMuted, background: 'transparent' }}>
                 {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Custom'}
               </button>
@@ -1375,19 +1375,31 @@ export default function ReportsPage() {
             {/* ── Summary stats ── */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
               {[
-                { title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, icon: '🕐', color: 'rgba(59,130,246,0.15)' },
-                { title: 'Total Entries',      value: totalEntries,                         icon: '📝', color: 'rgba(139,92,246,0.15)' },
-                { title: 'Pending Approval',   value: totalPending,                         icon: '⏳', color: 'rgba(245,158,11,0.15)' },
-                { title: 'Approved',           value: totalApproved,                        icon: '✅', color: 'rgba(16,185,129,0.15)' },
+                {
+                  title: 'Total Hours Logged', value: `${Number(totalHours).toFixed(1)}h`, soft: 'rgba(29,78,216,0.10)', text: '#1d4ed8',
+                  icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v4.5l3 1.75"/></svg>),
+                },
+                {
+                  title: 'Total Entries', value: totalEntries, soft: 'rgba(82,82,91,0.10)', text: '#52525b',
+                  icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>),
+                },
+                {
+                  title: 'Pending Approval', value: totalPending, soft: 'rgba(180,83,9,0.10)', text: '#b45309',
+                  icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>),
+                },
+                {
+                  title: 'Approved', value: totalApproved, soft: 'rgba(5,150,105,0.10)', text: '#059669',
+                  icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>),
+                },
               ].map((s) => (
-                <div key={s.title} className="rounded-xl p-5 shadow-sm"
+                <div key={s.title} className="rounded-xl p-5 transition-shadow duration-300 hover:shadow-md"
                   style={{ background: t.statGrad, border: t.border }}>
                   <div className="flex items-start justify-between mb-3">
-                    <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
-                    <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
-                      style={{ background: s.color }}>{s.icon}</span>
+                    <span className="text-[12px] font-medium tracking-tight" style={{ color: t.textMuted }}>{s.title}</span>
+                    <span className="w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{ background: s.soft, color: s.text }}>{s.icon}</span>
                   </div>
-                  <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
+                  <div className="text-[28px] font-semibold tracking-tight tabular-nums" style={{ color: t.text }}>{s.value}</div>
                 </div>
               ))}
             </div>

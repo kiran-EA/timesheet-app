@@ -394,7 +394,7 @@ export default function InsightsPage() {
             <button key={p} onClick={() => applyPreset(p)}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize"
               style={preset === p
-                ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }
+                ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff' }
                 : { border: t.border, color: t.textMuted, background: 'transparent' }}>
               {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Custom'}
             </button>
@@ -456,21 +456,33 @@ export default function InsightsPage() {
           </div>
         ) : (
           <>
-            {/* Stat cards */}
+            {/* Stat cards — clean SVG glyphs, no emoji (Anti-Emoji Policy) */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
               {[
-                { title: 'Total Hours Logged', value: `${totalHours.toFixed(1)}h`, icon: '🕐', accent: '#3b82f6' },
-                { title: 'Active Members',     value: totalMembers,                 icon: '👥', accent: '#8b5cf6' },
-                { title: 'Approved Entries',   value: totalApproved,                icon: '✅', accent: '#10b981' },
-                { title: 'Pending Entries',    value: totalPending,                 icon: '⏳', accent: '#f59e0b' },
+                {
+                  title: 'Total Hours Logged', value: `${totalHours.toFixed(1)}h`, accent: '#1d4ed8',
+                  icon: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v4.5l3 1.75"/></svg>),
+                },
+                {
+                  title: 'Active Members', value: totalMembers, accent: '#0f766e',
+                  icon: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>),
+                },
+                {
+                  title: 'Approved Entries', value: totalApproved, accent: '#059669',
+                  icon: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>),
+                },
+                {
+                  title: 'Pending Entries', value: totalPending, accent: '#b45309',
+                  icon: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>),
+                },
               ].map(s => (
-                <div key={s.title} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
+                <div key={s.title} className="rounded-xl p-5 shadow-sm transition-shadow duration-300 hover:shadow-md" style={{ background: t.statGrad, border: t.border }}>
                   <div className="flex items-start justify-between mb-3">
-                    <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.title}</span>
-                    <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
-                      style={{ background: `${s.accent}20` }}>{s.icon}</span>
+                    <span className="text-[12px] font-medium tracking-tight" style={{ color: t.textMuted }}>{s.title}</span>
+                    <span className="w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{ background: `${s.accent}14`, color: s.accent }}>{s.icon}</span>
                   </div>
-                  <div className="text-3xl font-bold" style={{ color: t.text }}>{s.value}</div>
+                  <div className="text-[28px] font-semibold tracking-tight tabular-nums" style={{ color: t.text }}>{s.value}</div>
                 </div>
               ))}
             </div>
@@ -485,7 +497,7 @@ export default function InsightsPage() {
                 <button key={tb.id} onClick={() => setTab(tb.id)}
                   className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all"
                   style={tab === tb.id
-                    ? { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff', boxShadow: '0 2px 8px rgba(59,130,246,0.3)' }
+                    ? { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff', boxShadow: '0 2px 8px rgba(59,130,246,0.3)' }
                     : { color: t.textMuted, background: 'transparent' }}>
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: tab === tb.id ? '#fff' : tb.dot }} />
                   {tb.label}
@@ -505,11 +517,22 @@ export default function InsightsPage() {
             )}
 
             {filteredSpaces.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 rounded-xl gap-3"
+              <div className="flex flex-col items-center justify-center h-56 rounded-2xl gap-4"
                 style={{ background: t.cardBg, border: t.border }}>
-                <div className="text-3xl">{tab === 'active' ? '📋' : '🏁'}</div>
-                <p className="text-sm font-medium" style={{ color: t.textMuted }}>
-                  No {tab === 'active' ? 'active' : 'completed'} epics with data in this period
+                <div className="inline-flex w-12 h-12 items-center justify-center rounded-2xl animate-float"
+                  style={{ background: 'rgba(29,78,216,0.08)', color: '#1d4ed8' }}>
+                  {tab === 'active' ? (
+                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 21V4l6 4 4-4 6 4v13"/><path d="M4 21h16"/>
+                    </svg>
+                  )}
+                </div>
+                <p className="text-[13px] font-medium tracking-tight" style={{ color: t.textMuted }}>
+                  No {tab === 'active' ? 'active' : 'completed'} epics with data in this period.
                 </p>
               </div>
             ) : (

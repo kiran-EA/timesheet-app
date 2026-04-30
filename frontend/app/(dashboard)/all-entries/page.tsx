@@ -323,18 +323,30 @@ export default function AllEntriesPage() {
         {/* ── Summary stat cards ───────────────────────────────────────── */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           {[
-            { label: 'Total',       value: filtered.length,  icon: '📋', color: 'rgba(59,130,246,0.15)',  text: '#3b82f6' },
-            { label: 'Pending',     value: pending.length,   icon: '⏳', color: 'rgba(245,158,11,0.15)', text: '#d97706' },
-            { label: 'Approved',    value: approved.length,  icon: '✓',  color: 'rgba(16,185,129,0.15)', text: '#059669' },
-            { label: 'Rejected',    value: rejected.length,  icon: '✕',  color: 'rgba(239,68,68,0.15)',  text: '#dc2626' },
+            {
+              label: 'Total', value: filtered.length, text: '#1d4ed8', soft: 'rgba(29,78,216,0.10)',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>),
+            },
+            {
+              label: 'Pending', value: pending.length, text: '#b45309', soft: 'rgba(180,83,9,0.10)',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>),
+            },
+            {
+              label: 'Approved', value: approved.length, text: '#059669', soft: 'rgba(5,150,105,0.10)',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>),
+            },
+            {
+              label: 'Rejected', value: rejected.length, text: '#b91c1c', soft: 'rgba(185,28,28,0.10)',
+              icon: (<svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>),
+            },
           ].map((s) => (
-            <div key={s.label} className="rounded-xl p-5 shadow-sm" style={{ background: t.statGrad, border: t.border }}>
+            <div key={s.label} className="rounded-xl p-5 transition-shadow duration-300 hover:shadow-md" style={{ background: t.statGrad, border: t.border }}>
               <div className="flex items-start justify-between mb-3">
-                <span className="text-sm font-medium" style={{ color: t.textMuted }}>{s.label}</span>
-                <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg"
-                  style={{ background: s.color }}>{s.icon}</span>
+                <span className="text-[12px] font-medium tracking-tight" style={{ color: t.textMuted }}>{s.label}</span>
+                <span className="w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ background: s.soft, color: s.text }}>{s.icon}</span>
               </div>
-              <div className="text-3xl font-bold" style={{ color: s.text }}>{s.value}</div>
+              <div className="text-[28px] font-semibold tracking-tight tabular-nums" style={{ color: s.text }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -347,7 +359,7 @@ export default function AllEntriesPage() {
             <p className="text-sm mb-4" style={{ color: t.textSubtle }}>No data loaded yet.</p>
             <button onClick={fetchAll}
               className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-              style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)' }}>
+              style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
               Load All Entries
             </button>
           </div>
@@ -356,7 +368,11 @@ export default function AllEntriesPage() {
             {/* ── Pending & Resubmitted ──────────────────────────────── */}
             <Section
               title="Pending & Resubmitted"
-              icon="⏳"
+              icon={(
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/>
+                </svg>
+              )}
               count={pending.length}
               colorStyle={{ color: '#d97706', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)' }}
               entries={pending}
@@ -445,7 +461,7 @@ export default function AllEntriesPage() {
               <button onClick={handleResubmit}
                 disabled={resubmitting || !resubmitWork.trim() || !resubmitHours}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg,#7c3aed,#8b5cf6)' }}>
+                style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
                 {resubmitting ? 'Resubmitting…' : 'Resubmit'}
               </button>
             </div>
