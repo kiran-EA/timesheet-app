@@ -10,7 +10,7 @@ app = FastAPI(
 )
 
 # CORS — allow configured frontend + localhost for dev
-_origins = list({settings.FRONTEND_URL, "http://localhost:3000", "https://timesheet-app-orcin.vercel.app"})
+_origins = list({settings.FRONTEND_URL, "http://localhost:3000", "https://timesheet-app-orcin.vercel.app", "timesheet-app-git-ui-updates-expressanalytics.vercel.app"})
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
