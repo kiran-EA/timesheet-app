@@ -1,10 +1,37 @@
 import smtplib
 import ssl
+import socket
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import date, timedelta
 from typing import List, Dict
 from app.core.config import settings
+
+
+def _smtp_ipv4(host: str, port: int, timeout: int = 15) -> smtplib.SMTP:
+    """Open an SMTP connection using IPv4 only.
+    Render free tier has no IPv6 routing; getaddrinfo returns IPv6 first
+    for smtp.gmail.com which causes ENETUNREACH (errno 101)."""
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"No IPv4 address found for {host}")
+    ip = infos[0][4][0]
+    smtp = smtplib.SMTP(timeout=timeout)
+    smtp._host = host          # keep original host for TLS SNI
+    smtp.connect(ip, port)
+    return smtp
+
+
+def _smtp_ssl_ipv4(host: str, port: int, context: ssl.SSLContext, timeout: int = 15) -> smtplib.SMTP_SSL:
+    """Same as above but for SMTP_SSL."""
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"No IPv4 address found for {host}")
+    ip = infos[0][4][0]
+    smtp = smtplib.SMTP_SSL(timeout=timeout, context=context)
+    smtp._host = host
+    smtp.connect(ip, port)
+    return smtp
 
 
 def _working_days_back(n: int) -> date:
@@ -128,22 +155,23 @@ def send_timesheet_reminder(to_email: str, name: str, today_str: str,
         msg["To"]      = to_email
         msg.attach(MIMEText(html, "html"))
 
-        # Try STARTTLS on port 587 first; fall back to SSL on port 465
+        # Try STARTTLS on port 587 first (IPv4 forced to avoid ENETUNREACH on Render)
         try:
-            with smtplib.SMTP(settings.SMTP_HOST, 587, timeout=15) as s:
-                s.ehlo()
+            with _smtp_ipv4(settings.SMTP_HOST, 587) as s:
+                s.ehlo(settings.SMTP_HOST)
                 s.starttls(context=ssl.create_default_context())
-                s.ehlo()
+                s.ehlo(settings.SMTP_HOST)
                 s.login(smtp_email, smtp_password)
                 s.sendmail(smtp_email, to_email, msg.as_string())
         except smtplib.SMTPAuthenticationError as auth_err:
             print(f"[email] Auth failed (port 587): {auth_err}. "
-                  "If using Gmail, make sure SMTP_PASSWORD is a 16-char App Password, not your regular login password.")
+                  "Make sure SMTP_PASSWORD is a 16-char Gmail App Password.")
             return False
-        except Exception:
-            # Fallback: SSL on port 465
+        except Exception as e587:
+            print(f"[email] Port 587 failed ({e587}), trying SSL port 465…")
+            # Fallback: SSL on port 465 (IPv4 forced)
             ctx = ssl.create_default_context()
-            with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, context=ctx, timeout=15) as s:
+            with _smtp_ssl_ipv4(settings.SMTP_HOST, 465, ctx) as s:
                 s.login(smtp_email, smtp_password)
                 s.sendmail(smtp_email, to_email, msg.as_string())
 
