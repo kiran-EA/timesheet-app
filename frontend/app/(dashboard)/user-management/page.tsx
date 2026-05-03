@@ -654,6 +654,7 @@ export default function UserManagementPage() {
   const [eveningTime,     setEveningTime]     = useState('22:00');
   const [notifEnabled,    setNotifEnabled]    = useState(true);
   const [scheduleMsg,     setScheduleMsg]     = useState('');
+  const [globalSaving,    setGlobalSaving]    = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -662,6 +663,22 @@ export default function UserManagementPage() {
       .then((d) => { if (d) { setMorningTime(d.morning_time); setEveningTime(d.evening_time); setNotifEnabled(d.enabled); } })
       .catch(() => {});
   }, [token]);
+
+  const handleGlobalToggle = async () => {
+    const next = !notifEnabled;
+    setNotifEnabled(next);
+    setGlobalSaving(true);
+    const res = await fetch(`${API}/notifications/settings`, {
+      method: 'PUT', headers: authHeaders(token),
+      body: JSON.stringify({ morning_time: morningTime, evening_time: eveningTime, enabled: next }),
+    });
+    setGlobalSaving(false);
+    if (!res.ok) {
+      setNotifEnabled(!next); // revert on failure
+      setScheduleMsg('Failed to save global setting.');
+      setTimeout(() => setScheduleMsg(''), 3000);
+    }
+  };
 
   const handleSaveSchedule = async () => {
     setScheduleLoading(true); setScheduleMsg('');
@@ -765,26 +782,43 @@ export default function UserManagementPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium" style={{ color: t.textMuted }}>Global</span>
-                  <button onClick={() => setNotifEnabled((v) => !v)}
-                    className="flex items-center gap-1.5 transition-opacity">
+                  <button onClick={handleGlobalToggle} disabled={globalSaving}
+                    className="flex items-center gap-1.5 transition-opacity disabled:opacity-60">
                     <div className="relative w-9 h-5 rounded-full transition-colors"
                       style={{ background: notifEnabled ? '#10b981' : '#374151' }}>
                       <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
                         style={{ left: notifEnabled ? '18px' : '2px' }} />
                     </div>
                     <span className="text-xs font-medium" style={{ color: notifEnabled ? '#10b981' : t.textSubtle }}>
-                      {notifEnabled ? 'On' : 'Off'}
+                      {globalSaving ? '…' : notifEnabled ? 'On' : 'Off'}
                     </span>
                   </button>
                 </div>
               </div>
-              <div className="flex items-end gap-4 flex-wrap">
+
+              {/* Schedule controls — blocked when global is Off */}
+              <div className="relative">
+                {!notifEnabled && (
+                  <div className="absolute inset-0 z-10 rounded-xl flex items-center justify-center"
+                    style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(2px)' }}>
+                    <div className="flex flex-col items-center gap-2 px-6 py-4 rounded-xl"
+                      style={{ background: t.cardBg, border: t.border }}>
+                      <svg className="w-5 h-5" style={{ color: t.textSubtle }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                      </svg>
+                      <p className="text-sm font-semibold" style={{ color: t.text }}>Notifications are Off</p>
+                      <p className="text-xs text-center" style={{ color: t.textMuted }}>Turn on the Global toggle to edit the schedule</p>
+                    </div>
+                  </div>
+                )}
+              <div className="flex items-end gap-4 flex-wrap mt-5">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: t.textMuted }}>
                     Morning Reminder
                   </label>
                   <input type="time" value={morningTime} onChange={(e) => setMorningTime(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    disabled={!notifEnabled}
+                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-40"
                     style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
                   <p className="text-[11px]" style={{ color: t.textSubtle }}>IST</p>
                 </div>
@@ -793,7 +827,8 @@ export default function UserManagementPage() {
                     Evening Reminder
                   </label>
                   <input type="time" value={eveningTime} onChange={(e) => setEveningTime(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    disabled={!notifEnabled}
+                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-40"
                     style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
                   <p className="text-[11px]" style={{ color: t.textSubtle }}>IST</p>
                 </div>
@@ -830,6 +865,7 @@ export default function UserManagementPage() {
                   </span>
                 )}
               </div>
+              </div>{/* end relative blocker wrapper */}
             </div>
 
             <UserSection
