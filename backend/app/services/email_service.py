@@ -17,7 +17,7 @@ def _send_via_resend(to_email: str, subject: str, html: str) -> bool:
     api_key = settings.RESEND_API_KEY
     if not api_key:
         return False
-    from_addr = f"TimeSync <{settings.SMTP_EMAIL}>" if settings.SMTP_EMAIL else "TimeSync <onboarding@resend.dev>"
+    from_addr = settings.RESEND_FROM_EMAIL or "TimeSync <onboarding@resend.dev>"
     try:
         resp = _requests.post(
             "https://api.resend.com/emails",

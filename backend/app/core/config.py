@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_EMAIL: str = ""
     SMTP_PASSWORD: str = ""
-    RESEND_API_KEY: str = ""   # https://resend.com — preferred on cloud hosts that block SMTP
+    RESEND_API_KEY: str = ""     # https://resend.com — preferred on cloud hosts that block SMTP
+    RESEND_FROM_EMAIL: str = "TimeSync <onboarding@resend.dev>"  # set to your verified domain after DNS setup
     
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
