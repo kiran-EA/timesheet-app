@@ -1,9 +1,11 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from datetime import date, timedelta
+from datetime import timedelta
+import pytz
 
 REFERENCE_DATE = "2026-04-15"
 IST_TZ         = "Asia/Kolkata"
+_IST           = pytz.timezone(IST_TZ)
 
 scheduler = BackgroundScheduler(timezone=IST_TZ)
 
@@ -11,6 +13,7 @@ scheduler = BackgroundScheduler(timezone=IST_TZ)
 def run_reminder_job() -> dict:
     """Check every active user with email enabled; send reminder if today < 8h.
     Returns a summary dict with sent/skipped/failed counts."""
+    from datetime import datetime
     from app.db.queries import (
         get_users_for_notification, get_unfilled_weekdays,
         get_notification_settings, execute_query,
@@ -22,11 +25,12 @@ def run_reminder_job() -> dict:
         print("[scheduler] Notifications globally disabled — skipping.")
         return {"status": "skipped", "reason": "globally disabled", "sent": 0, "failed": 0, "skipped": 0}
 
-    today     = date.today()
+    # Use IST date so Render (UTC) doesn't trigger weekend check on Sunday UTC = Monday IST
+    today     = datetime.now(_IST).date()
     today_str = str(today)
 
     if today.weekday() >= 5:
-        print(f"[scheduler] Weekend ({today_str}) — skipping.")
+        print(f"[scheduler] Weekend ({today_str} IST) — skipping.")
         return {"status": "skipped", "reason": "weekend", "sent": 0, "failed": 0, "skipped": 0}
 
     yesterday = str(today - timedelta(days=1))
