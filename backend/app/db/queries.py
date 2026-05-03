@@ -178,7 +178,8 @@ def get_all_users_with_details() -> list:
     """Admin: all active users with manager name and subordinate count."""
     return execute_query("""
         SELECT u.user_id, u.email, u.full_name, u.role, u.avatar, u.manager_id,
-               COALESCE(u.google_auth_enabled, false) AS google_auth_enabled,
+               COALESCE(u.google_auth_enabled, false)          AS google_auth_enabled,
+               COALESCE(u.email_notifications_enabled, true)   AS email_notifications_enabled,
                m.full_name AS manager_name,
                (SELECT COUNT(*) FROM users r
                 WHERE r.manager_id = u.user_id AND r.is_active = true) AS resource_count
@@ -683,3 +684,73 @@ def get_entry_with_user(entry_id: str) -> Optional[Dict[str, Any]]:
         (entry_id,),
         fetch_one=True,
     )
+
+
+# ── Email notifications ────────────────────────────────────────────────────────
+
+def toggle_email_notifications(user_id: str, enabled: bool):
+    execute_query(
+        "UPDATE users SET email_notifications_enabled = %s WHERE user_id = %s",
+        (enabled, user_id), fetch_all=False,
+    )
+
+
+def get_notification_settings() -> Dict[str, Any]:
+    row = execute_query("SELECT * FROM notification_settings WHERE id = 1", fetch_one=True)
+    return dict(row) if row else {"morning_time": "09:30", "evening_time": "22:00", "enabled": True}
+
+
+def save_notification_settings(morning_time: str, evening_time: str, enabled: bool):
+    execute_query(
+        """INSERT INTO notification_settings (id, morning_time, evening_time, enabled, updated_at)
+           VALUES (1, %s, %s, %s, CURRENT_TIMESTAMP)
+           ON CONFLICT (id) DO UPDATE
+           SET morning_time = EXCLUDED.morning_time,
+               evening_time = EXCLUDED.evening_time,
+               enabled      = EXCLUDED.enabled,
+               updated_at   = CURRENT_TIMESTAMP""",
+        (morning_time, evening_time, enabled), fetch_all=False,
+    )
+
+
+def get_users_for_notification() -> list:
+    """Active users with email notifications enabled."""
+    return execute_query(
+        """SELECT user_id, full_name, email
+             FROM users
+            WHERE is_active = true
+              AND email_notifications_enabled = true
+              AND email IS NOT NULL
+            ORDER BY full_name""",
+        fetch_all=True,
+    ) or []
+
+
+def get_unfilled_weekdays(user_id: str, from_date: str, to_date: str) -> list:
+    """Return list of weekday dates (as strings) where total logged hours < 8.
+    from_date and to_date are YYYY-MM-DD strings."""
+    rows = execute_query(
+        """SELECT entry_date::text AS d, COALESCE(SUM(hours), 0) AS total_hours
+             FROM timesheet_entries
+            WHERE user_id = %s
+              AND entry_date BETWEEN %s AND %s
+              AND status != 'rejected'
+            GROUP BY entry_date""",
+        (user_id, from_date, to_date), fetch_all=True,
+    ) or []
+    filled = {dict(r)["d"]: float(dict(r)["total_hours"]) for r in rows}
+
+    # Generate all weekdays in range
+    from datetime import date, timedelta
+    start  = date.fromisoformat(from_date)
+    end    = date.fromisoformat(to_date)
+    result = []
+    cur    = start
+    while cur <= end:
+        if cur.weekday() < 5:   # Mon–Fri only
+            ds = str(cur)
+            hours = filled.get(ds, 0.0)
+            if hours < 8:
+                result.append({"date": ds, "hours": round(hours, 2)})
+        cur += timedelta(days=1)
+    return result

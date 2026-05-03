@@ -20,6 +20,7 @@ interface User {
   manager_name: string | null;
   resource_count: number;
   google_auth_enabled: boolean;
+  email_notifications_enabled: boolean;
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -480,13 +481,50 @@ function GoogleToggle({ user, token, currentUserId, onChange }: {
   );
 }
 
+function EmailToggle({ user, token, onChange }: {
+  user: User; token: string; onChange: (uid: string, val: boolean) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const on = user.email_notifications_enabled ?? true;
+
+  const handleToggle = async () => {
+    if (loading) return;
+    setLoading(true);
+    const next = !on;
+    try {
+      await fetch(`${API}/users/${user.user_id}/email-notifications`, {
+        method: 'PATCH', headers: authHeaders(token),
+        body: JSON.stringify({ enabled: next }),
+      });
+      onChange(user.user_id, next);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <button onClick={handleToggle} disabled={loading}
+      title={on ? 'Disable email notifications' : 'Enable email notifications'}
+      className="flex items-center gap-2 transition-opacity disabled:opacity-40"
+      style={{ opacity: loading ? 0.5 : 1 }}>
+      <div className="relative w-9 h-5 rounded-full transition-colors"
+        style={{ background: on ? '#10b981' : '#374151' }}>
+        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+          style={{ left: on ? '18px' : '2px' }} />
+      </div>
+      <span className="text-xs font-medium" style={{ color: on ? '#10b981' : t.textSubtle }}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
+}
+
 // ── User table section (by role) ──────────────────────────────────────────────
 function UserSection({
-  title, users, allUsers, token, currentUserId, onEdit, onUnassigned, showMembers, onGoogleToggle,
+  title, users, allUsers, token, currentUserId, onEdit, onUnassigned, showMembers, onGoogleToggle, onEmailToggle,
 }: {
   title: string; users: User[]; allUsers: User[]; token: string; currentUserId: string;
   onEdit: (u: User) => void; onUnassigned: (uid: string) => void; showMembers: boolean;
   onGoogleToggle: (uid: string, val: boolean) => void;
+  onEmailToggle:  (uid: string, val: boolean) => void;
 }) {
   if (users.length === 0) return null;
   return (
@@ -502,7 +540,7 @@ function UserSection({
       <table className="w-full text-sm" style={{ minWidth: 680 }}>
         <thead style={{ background: t.tableHead }}>
           <tr>
-            {['User', 'Email', 'Role', showMembers ? 'Members' : 'Manager', 'Google Auth', 'Configure'].map((h) => (
+            {['User', 'Email', 'Role', showMembers ? 'Members' : 'Manager', 'Google Auth', 'Email Notif', 'Configure'].map((h) => (
               <th key={h} className="px-5 py-3 text-left font-semibold"
                 style={{ color: t.textHeader, borderBottom: t.border, fontSize: 11,
                   textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -538,6 +576,9 @@ function UserSection({
               </td>
               <td className="px-5 py-3.5">
                 <GoogleToggle user={user} token={token} currentUserId={currentUserId} onChange={onGoogleToggle} />
+              </td>
+              <td className="px-5 py-3.5">
+                <EmailToggle user={user} token={token} onChange={onEmailToggle} />
               </td>
               <td className="px-5 py-3.5">
                 <button onClick={() => onEdit(user)}
@@ -587,6 +628,45 @@ export default function UserManagementPage() {
     setUsers((prev) => prev.map((u) =>
       u.user_id === uid ? { ...u, google_auth_enabled: val } : u,
     ));
+  };
+
+  const handleEmailToggle = (uid: string, val: boolean) => {
+    setUsers((prev) => prev.map((u) =>
+      u.user_id === uid ? { ...u, email_notifications_enabled: val } : u,
+    ));
+  };
+
+  // ── Notification schedule settings ──
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [morningTime,     setMorningTime]     = useState('09:30');
+  const [eveningTime,     setEveningTime]     = useState('22:00');
+  const [notifEnabled,    setNotifEnabled]    = useState(true);
+  const [scheduleMsg,     setScheduleMsg]     = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API}/notifications/settings`, { headers: authHeaders(token) })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) { setMorningTime(d.morning_time); setEveningTime(d.evening_time); setNotifEnabled(d.enabled); } })
+      .catch(() => {});
+  }, [token]);
+
+  const handleSaveSchedule = async () => {
+    setScheduleLoading(true); setScheduleMsg('');
+    const res = await fetch(`${API}/notifications/settings`, {
+      method: 'PUT', headers: authHeaders(token),
+      body: JSON.stringify({ morning_time: morningTime, evening_time: eveningTime, enabled: notifEnabled }),
+    });
+    setScheduleLoading(false);
+    setScheduleMsg(res.ok ? 'Schedule saved.' : 'Failed to save.');
+    setTimeout(() => setScheduleMsg(''), 3000);
+  };
+
+  const handleTestEmail = async () => {
+    setScheduleMsg('Sending test emails…');
+    const res = await fetch(`${API}/notifications/trigger`, { method: 'POST', headers: authHeaders(token) });
+    setScheduleMsg(res.ok ? 'Emails are being sent now.' : 'Failed to send.');
+    setTimeout(() => setScheduleMsg(''), 4000);
   };
 
   if (me?.role !== 'admin') {
@@ -662,20 +742,85 @@ export default function UserManagementPage() {
           <div className="text-center py-16" style={{ color: t.textSubtle }}>Loading users…</div>
         ) : (
           <>
+            {/* Email notification schedule panel */}
+            <div className="rounded-xl p-6" style={{ background: t.cardBg, border: t.border }}>
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-sm font-bold" style={{ color: t.text }}>Email Notification Schedule</h3>
+                  <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>
+                    Reminders sent IST when a user's timesheet is under 8h. Weekdays only.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium" style={{ color: t.textMuted }}>Global</span>
+                  <button onClick={() => setNotifEnabled((v) => !v)}
+                    className="flex items-center gap-1.5 transition-opacity">
+                    <div className="relative w-9 h-5 rounded-full transition-colors"
+                      style={{ background: notifEnabled ? '#10b981' : '#374151' }}>
+                      <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                        style={{ left: notifEnabled ? '18px' : '2px' }} />
+                    </div>
+                    <span className="text-xs font-medium" style={{ color: notifEnabled ? '#10b981' : t.textSubtle }}>
+                      {notifEnabled ? 'On' : 'Off'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-end gap-4 flex-wrap">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: t.textMuted }}>
+                    Morning Reminder
+                  </label>
+                  <input type="time" value={morningTime} onChange={(e) => setMorningTime(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
+                  <p className="text-[11px]" style={{ color: t.textSubtle }}>IST</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: t.textMuted }}>
+                    Evening Reminder
+                  </label>
+                  <input type="time" value={eveningTime} onChange={(e) => setEveningTime(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
+                  <p className="text-[11px]" style={{ color: t.textSubtle }}>IST</p>
+                </div>
+                <div className="flex items-center gap-2 pb-0.5">
+                  <button onClick={handleSaveSchedule} disabled={scheduleLoading}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
+                    {scheduleLoading ? 'Saving…' : 'Save Schedule'}
+                  </button>
+                  <button onClick={handleTestEmail}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80"
+                    style={{ border: t.border, color: t.textMuted, background: 'transparent' }}
+                    title="Send reminder emails right now to all users who haven't filled 8h today (ignores scheduled times)">
+                    Send Now
+                  </button>
+                </div>
+                {scheduleMsg && (
+                  <span className="text-xs font-medium pb-0.5"
+                    style={{ color: scheduleMsg.includes('ailed') ? '#b91c1c' : '#059669' }}>
+                    {scheduleMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+
             <UserSection
               title="Admins" users={admins} allUsers={users} token={token}
               currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
-              showMembers onGoogleToggle={handleGoogleToggle}
+              showMembers onGoogleToggle={handleGoogleToggle} onEmailToggle={handleEmailToggle}
             />
             <UserSection
               title="Teamleads" users={teamleads} allUsers={users} token={token}
               currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
-              showMembers onGoogleToggle={handleGoogleToggle}
+              showMembers onGoogleToggle={handleGoogleToggle} onEmailToggle={handleEmailToggle}
             />
             <UserSection
               title="Resources" users={resources} allUsers={users} token={token}
               currentUserId={me.id} onEdit={setEditing} onUnassigned={handleUnassigned}
-              showMembers={false} onGoogleToggle={handleGoogleToggle}
+              showMembers={false} onGoogleToggle={handleGoogleToggle} onEmailToggle={handleEmailToggle}
             />
           </>
         )}
