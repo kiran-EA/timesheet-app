@@ -1,8 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from pydantic import BaseModel
+from datetime import date as _date
 from app.core.security import get_current_user
 from app.db import queries
+from app.services.jira_service import jira_service
+
+
+def _check_jira_token(entry: dict) -> Optional[str]:
+    """Return an error message if the entry owner's JIRA token is missing or expired.
+    Returns None if the token is valid and approval should proceed."""
+    name = entry.get("full_name") or "This user"
+    if not entry.get("jira_token"):
+        return f"{name} has no JIRA token configured. Ask them to add it via JIRA Integration in the sidebar."
+    expires = entry.get("jira_token_expires_at")
+    if expires:
+        exp_date = expires if isinstance(expires, _date) else _date.fromisoformat(str(expires))
+        if exp_date < _date.today():
+            return f"{name}'s JIRA token expired on {exp_date.strftime('%d %b %Y')}. Ask them to update it via JIRA Integration."
+    return None
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
 
@@ -32,9 +48,34 @@ async def get_pending(
 @router.post("/approve/{entry_id}")
 async def approve(entry_id: str, current_user: dict = Depends(get_current_user)):
     require_manager(current_user)
+
+    # Hard block: check JIRA token before approving
+    entry = queries.get_entry_with_user(entry_id)
+    if entry:
+        err = _check_jira_token(dict(entry))
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+
     queries.approve_entry(entry_id, current_user["sub"])
     queries.bust(f"pending:{current_user['sub']}")
-    return {"status": "approved"}
+
+    # Post worklog to JIRA
+    jira_synced = False
+    try:
+        if entry:
+            e = dict(entry)
+            jira_synced = jira_service.post_worklog(
+                email=e["email"],
+                token=e["jira_token"],
+                issue_key=e["task_id"],
+                entry_date=str(e["entry_date"]),
+                hours=float(e["hours"]),
+                description=e.get("work_description") or e.get("task_title") or e["task_id"],
+            )
+    except Exception as ex:
+        print(f"approve JIRA sync error: {ex}")
+
+    return {"status": "approved", "jira_synced": jira_synced}
 
 
 class RejectBody(BaseModel):
@@ -58,14 +99,59 @@ async def approve_all(
 ):
     """Approve all pending entries.
     Admin → all users across system.
-    Teamlead → direct subordinates only."""
+    Teamlead → direct subordinates only.
+    Entries whose owner has no token or expired token are skipped."""
     require_manager(current_user)
-    if current_user.get("role") == "admin":
-        queries.approve_all_entries(current_user["sub"], entry_date)
-    else:
-        queries.approve_all_for_manager(current_user["sub"], entry_date)
+    is_admin = current_user.get("role") == "admin"
+
+    pending = queries.get_pending_entries_with_tokens(
+        manager_id=None if is_admin else current_user["sub"],
+        entry_date=entry_date,
+    )
+
+    valid_ids   = []
+    skipped_users: dict = {}   # user_id → {name, reason}
+    for row in pending:
+        e = dict(row)
+        err = _check_jira_token(e)
+        if err:
+            uid = e["user_id"]
+            if uid not in skipped_users:
+                skipped_users[uid] = {"name": e.get("full_name", uid), "reason": err}
+        else:
+            valid_ids.append(e["id"])
+
+    # Approve only entries with valid tokens
+    queries.approve_entries_by_ids(valid_ids, current_user["sub"])
     queries.bust(f"pending:{current_user['sub']}")
-    return {"status": "all_approved"}
+
+    # Post worklogs for approved entries
+    synced = 0
+    for row in pending:
+        e = dict(row)
+        if e["id"] not in valid_ids:
+            continue
+        try:
+            ok = jira_service.post_worklog(
+                email=e["email"],
+                token=e["jira_token"],
+                issue_key=e["task_id"],
+                entry_date=str(e["entry_date"]),
+                hours=float(e["hours"]),
+                description=e.get("work_description") or e.get("task_title") or e["task_id"],
+            )
+            if ok:
+                synced += 1
+        except Exception as ex:
+            print(f"approve-all JIRA sync error entry {e['id']}: {ex}")
+
+    return {
+        "status": "all_approved",
+        "approved": len(valid_ids),
+        "skipped": len(skipped_users),
+        "skipped_users": [{"name": v["name"], "reason": v["reason"]} for v in skipped_users.values()],
+        "jira_synced": synced,
+    }
 
 
 @router.get("/analytics")

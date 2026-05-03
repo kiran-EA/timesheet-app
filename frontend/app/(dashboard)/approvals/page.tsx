@@ -50,6 +50,8 @@ export default function ApprovalsPage() {
   const [loading,     setLoading]     = useState(true);
   const [dateFilter,  setDateFilter]  = useState('');
   const [successMsg,  setSuccessMsg]  = useState('');
+  const [warnMsg,     setWarnMsg]     = useState('');
+  const [errorMsg,    setErrorMsg]    = useState('');
 
   // Reject modal
   const [rejectTarget, setRejectTarget] = useState<PendingEntry | null>(null);
@@ -82,33 +84,59 @@ export default function ApprovalsPage() {
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
-  const flash = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3000); };
+  const flash = (msg: string) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 4000); };
+  const warn  = (msg: string) => { setWarnMsg(msg);   setTimeout(() => setWarnMsg(''), 8000); };
+  const error = (msg: string) => { setErrorMsg(msg);  setTimeout(() => setErrorMsg(''), 8000); };
 
   const handleApprove = async (id: string) => {
-    await fetch(`${API}/approvals/approve/${id}`, { method: 'POST', headers: aH(token) });
+    const res = await fetch(`${API}/approvals/approve/${id}`, { method: 'POST', headers: aH(token) });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      error(data.detail || 'Approval failed.');
+      return;  // hard block — entry stays in list
+    }
     setEntries((prev) => prev.filter((e) => e.id !== id));
-    flash('Entry approved.');
+    flash('Entry approved and JIRA worklog synced.');
   };
 
   const handleApproveAll = async () => {
     const url = dateFilter
       ? `${API}/approvals/approve-all?entry_date=${dateFilter}`
       : `${API}/approvals/approve-all`;
-    await fetch(url, { method: 'POST', headers: aH(token) });
-    setEntries([]);
+    const res = await fetch(url, { method: 'POST', headers: aH(token) });
     setConfirmApproveAll(false);
-    flash('All entries approved.');
+    if (!res.ok) { error('Approve All failed. Please try again.'); return; }
+    const data = await res.json();
+    // Remove only the approved entries from the list
+    const skippedUserIds = new Set((data.skipped_users ?? []).map((u: { name: string }) => u.name));
+    setEntries((prev) => prev.filter((e) => skippedUserIds.has(e.full_name)));
+    if (data.approved > 0) flash(`${data.approved} entr${data.approved === 1 ? 'y' : 'ies'} approved and synced to JIRA.`);
+    if (data.skipped > 0) {
+      const names = (data.skipped_users ?? []).map((u: { name: string; reason: string }) => u.name).join(', ');
+      warn(`${data.skipped} user${data.skipped > 1 ? 's' : ''} skipped — no valid JIRA token: ${names}. Ask them to set up JIRA Integration.`);
+    }
   };
 
   const handleApproveUser = async (userId: string, items: PendingEntry[]) => {
     setApprovingUser(true);
-    await Promise.all(items.map((e) =>
+    let allBlocked = true;
+    let blockMsg = '';
+    const results = await Promise.all(items.map((e) =>
       fetch(`${API}/approvals/approve/${e.id}`, { method: 'POST', headers: aH(token) })
+        .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
     ));
-    setEntries((prev) => prev.filter((e) => e.user_id !== userId));
+    const approved = results.filter((r) => r.ok);
+    const blocked  = results.find((r) => !r.ok);
+    if (approved.length > 0) {
+      allBlocked = false;
+      setEntries((prev) => prev.filter((e) => e.user_id !== userId));
+      flash(`${approved.length} entr${approved.length === 1 ? 'y' : 'ies'} for ${items[0]?.full_name ?? 'user'} approved.`);
+    }
+    if (blocked) blockMsg = blocked.data?.detail || 'Some entries could not be approved.';
+    if (allBlocked && blockMsg) error(blockMsg);
+    else if (blocked && !allBlocked) warn(blockMsg);
     setConfirmApproveUser(null);
     setApprovingUser(false);
-    flash(`All entries for ${items[0]?.full_name ?? 'user'} approved.`);
   };
 
   const handleReject = async () => {
@@ -191,6 +219,29 @@ export default function ApprovalsPage() {
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
             {successMsg}
+          </div>
+        )}
+
+        {/* JIRA token error — hard block */}
+        {errorMsg && (
+          <div className="px-4 py-3 rounded-lg text-sm font-medium flex items-start gap-2"
+            style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.3)', color: '#b91c1c' }}>
+            <svg className="w-4 h-4 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {/* JIRA sync warning — skipped entries */}
+        {warnMsg && (
+          <div className="px-4 py-3 rounded-lg text-sm font-medium flex items-start gap-2"
+            style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: '#b45309' }}>
+            <svg className="w-4 h-4 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span>{warnMsg}</span>
           </div>
         )}
 

@@ -615,3 +615,71 @@ def get_my_calendar_data(user_id: str, year: int, month: int) -> list:
         GROUP BY entry_date, SPLIT_PART(task_id, '-', 1)
         ORDER BY entry_date
     """, (user_id, start, end), fetch_all=True) or []
+
+
+# ── JIRA token ─────────────────────────────────────────────────────────────────
+
+def save_user_jira_token(user_id: str, token: str, expires_at: Optional[str]):
+    execute_query(
+        """UPDATE users
+              SET jira_token = %s, jira_token_expires_at = %s
+            WHERE user_id = %s""",
+        (token, expires_at, user_id),
+        fetch_all=False,
+    )
+
+def get_user_jira_token(user_id: str) -> Optional[Dict[str, Any]]:
+    return execute_query(
+        "SELECT email, jira_token, jira_token_expires_at FROM users WHERE user_id = %s",
+        (user_id,),
+        fetch_one=True,
+    )
+
+def get_pending_entries_with_tokens(manager_id: str = None, entry_date: str = None) -> list:
+    """Return pending entries joined with owner email + jira_token for JIRA sync.
+    manager_id=None → admin path (all users); manager_id set → subordinates only."""
+    conditions = ["te.status IN ('pending','resubmitted')"]
+    params: list = []
+    if entry_date:
+        conditions.append("te.entry_date = %s")
+        params.append(entry_date)
+    if manager_id:
+        conditions.append("u.manager_id = %s")
+        params.append(manager_id)
+    where = " AND ".join(conditions)
+    return execute_query(
+        f"""SELECT te.id, te.user_id, te.task_id, te.entry_date, te.hours,
+                   te.work_description, te.task_title,
+                   u.full_name, u.email, u.jira_token, u.jira_token_expires_at
+              FROM timesheet_entries te
+              JOIN users u ON u.user_id = te.user_id
+             WHERE {where}""",
+        tuple(params) if params else None,
+        fetch_all=True,
+    ) or []
+
+
+def approve_entries_by_ids(entry_ids: list, approved_by: str):
+    """Approve only the given entry IDs — used by approve-all to skip invalid-token users."""
+    if not entry_ids:
+        return
+    placeholders = ','.join(['%s'] * len(entry_ids))
+    execute_query(
+        f"""UPDATE timesheet_entries
+               SET status='approved', approved_by=%s, approved_at=CURRENT_TIMESTAMP
+             WHERE id IN ({placeholders})""",
+        (approved_by, *entry_ids),
+        fetch_all=False,
+    )
+
+
+def get_entry_with_user(entry_id: str) -> Optional[Dict[str, Any]]:
+    """Return entry joined with owner's email + jira credentials."""
+    return execute_query(
+        """SELECT te.*, u.full_name, u.email, u.jira_token, u.jira_token_expires_at
+             FROM timesheet_entries te
+             JOIN users u ON u.user_id = te.user_id
+            WHERE te.id = %s""",
+        (entry_id,),
+        fetch_one=True,
+    )

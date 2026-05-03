@@ -108,6 +108,42 @@ async def toggle_google_auth(
     return {"user_id": user_id, "google_auth_enabled": body.enabled}
 
 
+class JiraTokenBody(BaseModel):
+    jira_token: str
+    jira_token_expires_at: Optional[str] = None  # YYYY-MM-DD or None
+
+
+@router.get("/me/jira-token")
+async def get_my_jira_token(current_user: dict = Depends(get_current_user)):
+    """Return masked token info for the current user."""
+    row = queries.get_user_jira_token(current_user["sub"])
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    d = dict(row)
+    token = d.get("jira_token") or ""
+    masked = ("••••••••••••" + token[-4:]) if len(token) > 4 else ("••••" if token else "")
+    return {
+        "has_token": bool(token),
+        "masked_token": masked,
+        "jira_token_expires_at": str(d["jira_token_expires_at"]) if d.get("jira_token_expires_at") else None,
+    }
+
+
+@router.patch("/me/jira-token")
+async def save_my_jira_token(body: JiraTokenBody, current_user: dict = Depends(get_current_user)):
+    """Any user can save/update their own JIRA API token."""
+    if not body.jira_token.strip():
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
+    queries.save_user_jira_token(current_user["sub"], body.jira_token.strip(), body.jira_token_expires_at or None)
+    return {"status": "saved"}
+
+
+@router.delete("/me/jira-token", status_code=204)
+async def delete_my_jira_token(current_user: dict = Depends(get_current_user)):
+    """Remove the stored JIRA token."""
+    queries.save_user_jira_token(current_user["sub"], None, None)
+
+
 class ConfigureUserBody(BaseModel):
     role: str
     manager_id: Optional[str] = None

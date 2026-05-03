@@ -502,4 +502,44 @@ class JiraService:
         return {}
 
 
+    def post_worklog(
+        self,
+        email: str,
+        token: str,
+        issue_key: str,
+        entry_date: str,   # YYYY-MM-DD
+        hours: float,
+        description: str,
+    ) -> bool:
+        """POST a worklog to JIRA using the user's own credentials.
+        Returns True on success, False on any failure."""
+        try:
+            auth = HTTPBasicAuth(email, token)
+            started = f"{entry_date}T09:00:00.000+0000"
+            body = {
+                "timeSpentSeconds": int(hours * 3600),
+                "started": started,
+                "comment": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": description or issue_key}]}],
+                },
+            }
+            r = requests.post(
+                f"{self.base_url}/issue/{issue_key}/worklog",
+                auth=auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=body,
+                timeout=15,
+            )
+            if r.ok:
+                print(f"JIRA worklog posted: {issue_key} {hours}h by {email}")
+                return True
+            print(f"JIRA worklog failed: {issue_key} {r.status_code} {r.text[:200]}")
+            return False
+        except Exception as e:
+            print(f"post_worklog error: {e}")
+            return False
+
+
 jira_service = JiraService()
