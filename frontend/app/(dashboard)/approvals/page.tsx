@@ -222,16 +222,7 @@ export default function ApprovalsPage() {
           </div>
         )}
 
-        {/* JIRA token error — hard block */}
-        {errorMsg && (
-          <div className="px-4 py-3 rounded-lg text-sm font-medium flex items-start gap-2"
-            style={{ background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.3)', color: '#b91c1c' }}>
-            <svg className="w-4 h-4 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        {/* JIRA block modal rendered via portal-style absolute — see below */}
 
         {/* JIRA sync warning — skipped entries */}
         {warnMsg && (
@@ -483,6 +474,59 @@ export default function ApprovalsPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* JIRA Token Block Modal */}
+      {errorMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setErrorMsg('')}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+            style={{ background: '#fff', border: '1px solid #e4e4e7' }}
+            onClick={(e) => e.stopPropagation()}>
+
+            {/* Red header bar */}
+            <div className="px-6 py-5 flex items-start gap-4"
+              style={{ background: 'rgba(185,28,28,0.06)', borderBottom: '1px solid rgba(185,28,28,0.15)' }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(185,28,28,0.10)' }}>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[15px] font-semibold" style={{ color: '#b91c1c' }}>Approval Blocked</h3>
+                <p className="text-sm mt-1 leading-relaxed" style={{ color: '#7f1d1d' }}>{errorMsg}</p>
+              </div>
+              <button onClick={() => setErrorMsg('')}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors flex-shrink-0">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4">
+              <p className="text-sm" style={{ color: '#52525b' }}>
+                The entry cannot be approved until the user sets up their JIRA token. Ask them to open{' '}
+                <span className="font-semibold text-zinc-800">JIRA Integration</span> in the sidebar and save their Atlassian API token.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-5">
+              <button onClick={() => setErrorMsg('')}
+                className="w-full py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{ background: '#b91c1c', color: '#fff' }}>
+                OK, Got It
+              </button>
+            </div>
+
           </div>
         </div>
       )}
