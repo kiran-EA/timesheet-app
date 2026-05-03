@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.core.security import get_current_user
 from app.db import queries
@@ -18,15 +18,14 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
 
 
 class NotificationSettingsBody(BaseModel):
-    morning_time: str   # HH:MM
-    evening_time: str   # HH:MM
+    morning_time: str
+    evening_time: str
     enabled: bool = True
 
 
 @router.put("/settings")
 async def update_settings(body: NotificationSettingsBody, current_user: dict = Depends(get_current_user)):
     require_admin(current_user)
-    # Validate HH:MM format
     for t in (body.morning_time, body.evening_time):
         parts = t.split(":")
         if len(parts) != 2 or not all(p.isdigit() for p in parts):
@@ -36,7 +35,6 @@ async def update_settings(body: NotificationSettingsBody, current_user: dict = D
 
     queries.save_notification_settings(body.morning_time, body.evening_time, body.enabled)
 
-    # Reschedule live jobs
     from app.services.scheduler_service import reschedule
     reschedule(body.morning_time, body.evening_time)
 
@@ -44,9 +42,9 @@ async def update_settings(body: NotificationSettingsBody, current_user: dict = D
 
 
 @router.post("/trigger")
-async def manual_trigger(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
-    """Admin: fire the reminder job immediately (for testing)."""
+async def manual_trigger(current_user: dict = Depends(get_current_user)):
+    """Admin: fire the reminder job immediately and return real results."""
     require_admin(current_user)
     from app.services.scheduler_service import run_reminder_job
-    background_tasks.add_task(run_reminder_job)
-    return {"status": "triggered"}
+    result = run_reminder_job()
+    return result

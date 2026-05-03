@@ -2,14 +2,15 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import date, timedelta
 
-REFERENCE_DATE = "2026-04-15"   # gaps tracked from this date
+REFERENCE_DATE = "2026-04-15"
 IST_TZ         = "Asia/Kolkata"
 
 scheduler = BackgroundScheduler(timezone=IST_TZ)
 
 
-def run_reminder_job():
-    """Check every active user with email enabled; send reminder if today < 8h."""
+def run_reminder_job() -> dict:
+    """Check every active user with email enabled; send reminder if today < 8h.
+    Returns a summary dict with sent/skipped/failed counts."""
     from app.db.queries import (
         get_users_for_notification, get_unfilled_weekdays,
         get_notification_settings, execute_query,
@@ -18,23 +19,25 @@ def run_reminder_job():
 
     settings = get_notification_settings()
     if not settings.get("enabled", True):
-        return
+        print("[scheduler] Notifications globally disabled — skipping.")
+        return {"status": "skipped", "reason": "globally disabled", "sent": 0, "failed": 0, "skipped": 0}
 
     today     = date.today()
     today_str = str(today)
 
-    # Only run on weekdays
     if today.weekday() >= 5:
-        return
+        print(f"[scheduler] Weekend ({today_str}) — skipping.")
+        return {"status": "skipped", "reason": "weekend", "sent": 0, "failed": 0, "skipped": 0}
 
     yesterday = str(today - timedelta(days=1))
+    users     = get_users_for_notification()
+    print(f"[scheduler] Reminder job: {len(users)} eligible users — {today_str}")
 
-    users = get_users_for_notification()
-    print(f"[scheduler] Reminder job running for {len(users)} users — {today_str}")
+    sent = failed = skipped = 0
+    errors = []
 
     for user in users:
         u = dict(user)
-        # Today's hours
         row = execute_query(
             """SELECT COALESCE(SUM(hours), 0) AS h
                  FROM timesheet_entries
@@ -43,30 +46,34 @@ def run_reminder_job():
         )
         today_hours = float(dict(row)["h"]) if row else 0.0
 
-        # Skip if today is already filled
         if today_hours >= 8:
+            skipped += 1
             continue
 
-        # Gaps from reference date up to yesterday
         gaps = get_unfilled_weekdays(u["user_id"], REFERENCE_DATE, yesterday)
-
-        send_timesheet_reminder(
+        ok   = send_timesheet_reminder(
             to_email    = u["email"],
             name        = u["full_name"],
             today_str   = today_str,
             today_hours = today_hours,
             gaps        = gaps,
         )
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+            errors.append(u["email"])
+
+    print(f"[scheduler] Done — sent={sent}, skipped={skipped}, failed={failed}")
+    return {"status": "done", "sent": sent, "skipped": skipped, "failed": failed, "errors": errors}
 
 
 def _parse_time(hhmm: str):
-    """Parse 'HH:MM' into (hour, minute) ints."""
     h, m = hhmm.split(":")
     return int(h), int(m)
 
 
 def reschedule(morning_time: str = "09:30", evening_time: str = "22:00"):
-    """Remove existing reminder jobs and re-add with new times."""
     for job_id in ("reminder_morning", "reminder_evening"):
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)

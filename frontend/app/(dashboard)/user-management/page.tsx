@@ -692,10 +692,23 @@ export default function UserManagementPage() {
   };
 
   const handleTestEmail = async () => {
-    setScheduleMsg('Sending test emails…');
-    const res = await fetch(`${API}/notifications/trigger`, { method: 'POST', headers: authHeaders(token) });
-    setScheduleMsg(res.ok ? 'Emails are being sent now.' : 'Failed to send.');
-    setTimeout(() => setScheduleMsg(''), 4000);
+    setScheduleMsg('Sending…');
+    const res  = await fetch(`${API}/notifications/trigger`, { method: 'POST', headers: authHeaders(token) });
+    const data = res.ok ? await res.json().catch(() => ({})) : {};
+    if (!res.ok) {
+      setScheduleMsg('Failed to trigger.');
+    } else if (data.reason === 'globally disabled') {
+      setScheduleMsg('Skipped — notifications are globally Off.');
+    } else if (data.reason === 'weekend') {
+      setScheduleMsg('Skipped — today is a weekend.');
+    } else {
+      const parts = [];
+      if (data.sent  > 0) parts.push(`${data.sent} sent`);
+      if (data.failed > 0) parts.push(`${data.failed} failed (check Render logs)`);
+      if (data.skipped > 0) parts.push(`${data.skipped} already at 8h`);
+      setScheduleMsg(parts.length ? parts.join(' · ') : 'No eligible users found.');
+    }
+    setTimeout(() => setScheduleMsg(''), 6000);
   };
 
   if (me?.role !== 'admin') {
