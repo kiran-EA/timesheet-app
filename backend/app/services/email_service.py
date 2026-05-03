@@ -1,6 +1,8 @@
 import smtplib
 import ssl
 import socket
+import json
+import requests as _requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import date, timedelta
@@ -8,40 +10,86 @@ from typing import List, Dict
 from app.core.config import settings
 
 
+# ── Resend HTTP API (works on Render free tier; SMTP ports are blocked) ─────────
+
+def _send_via_resend(to_email: str, subject: str, html: str) -> bool:
+    """Send via Resend HTTP API. Requires RESEND_API_KEY env var."""
+    api_key = settings.RESEND_API_KEY
+    if not api_key:
+        return False
+    from_addr = f"TimeSync <{settings.SMTP_EMAIL}>" if settings.SMTP_EMAIL else "TimeSync <onboarding@resend.dev>"
+    try:
+        resp = _requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": from_addr, "to": [to_email], "subject": subject, "html": html},
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            return True
+        print(f"[email] Resend error {resp.status_code}: {resp.text}")
+        return False
+    except Exception as e:
+        print(f"[email] Resend request failed: {e}")
+        return False
+
+
+# ── SMTP fallback (works locally; Render free tier blocks SMTP ports) ────────────
+
 def _smtp_ipv4(host: str, port: int, timeout: int = 15) -> smtplib.SMTP:
-    """Open an SMTP connection using IPv4 only.
-    Render free tier has no IPv6 routing; getaddrinfo returns IPv6 first
-    for smtp.gmail.com which causes ENETUNREACH (errno 101)."""
+    """Open an SMTP connection forcing IPv4 (avoids ENETUNREACH on IPv6-disabled hosts)."""
     infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
     if not infos:
         raise OSError(f"No IPv4 address found for {host}")
     ip = infos[0][4][0]
     smtp = smtplib.SMTP(timeout=timeout)
-    smtp._host = host          # keep original host for TLS SNI
-    smtp.connect(ip, port)
-    return smtp
-
-
-def _smtp_ssl_ipv4(host: str, port: int, context: ssl.SSLContext, timeout: int = 15) -> smtplib.SMTP_SSL:
-    """Same as above but for SMTP_SSL."""
-    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    if not infos:
-        raise OSError(f"No IPv4 address found for {host}")
-    ip = infos[0][4][0]
-    smtp = smtplib.SMTP_SSL(timeout=timeout, context=context)
     smtp._host = host
     smtp.connect(ip, port)
     return smtp
 
 
-def _working_days_back(n: int) -> date:
-    d, count = date.today(), 0
-    while count < n:
-        d -= timedelta(days=1)
-        if d.weekday() < 5:
-            count += 1
-    return d
+def _send_via_smtp(to_email: str, subject: str, html: str) -> bool:
+    smtp_email    = settings.SMTP_EMAIL
+    smtp_password = settings.SMTP_PASSWORD
+    if not smtp_email or not smtp_password:
+        print("[email] SMTP_EMAIL or SMTP_PASSWORD not configured.")
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"TimeSync <{smtp_email}>"
+        msg["To"]      = to_email
+        msg.attach(MIMEText(html, "html"))
+        raw = msg.as_string()
 
+        try:
+            with _smtp_ipv4(settings.SMTP_HOST, 587) as s:
+                s.ehlo(settings.SMTP_HOST)
+                s.starttls(context=ssl.create_default_context())
+                s.ehlo(settings.SMTP_HOST)
+                s.login(smtp_email, smtp_password)
+                s.sendmail(smtp_email, to_email, raw)
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[email] SMTP auth failed: {e}. Use a Gmail App Password.")
+            return False
+        except Exception as e587:
+            print(f"[email] Port 587 failed ({e587}), trying SSL 465…")
+            ctx = ssl.create_default_context()
+            infos = socket.getaddrinfo(settings.SMTP_HOST, 465, socket.AF_INET, socket.SOCK_STREAM)
+            ip = infos[0][4][0]
+            with smtplib.SMTP_SSL(ip, 465, context=ctx, timeout=15) as s:
+                s.login(smtp_email, smtp_password)
+                s.sendmail(smtp_email, to_email, raw)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[email] SMTP auth failed: {e}. Use a Gmail App Password.")
+        return False
+    except Exception as e:
+        print(f"[email] SMTP failed for {to_email}: {type(e).__name__}: {e}")
+        return False
+
+
+# ── HTML template ────────────────────────────────────────────────────────────────
 
 def _html_email(name: str, today: str, today_hours: float, gaps: List[Dict]) -> str:
     gap_rows = ""
@@ -99,9 +147,7 @@ def _html_email(name: str, today: str, today_hours: float, gaps: List[Dict]) -> 
                 <h1 style="margin:6px 0 0;font-size:22px;font-weight:700;color:#ffffff;">Timesheet Reminder</h1>
               </td>
               <td align="right">
-                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.15);display:inline-flex;align-items:center;justify-content:center;">
-                  <span style="font-size:22px;">&#9200;</span>
-                </div>
+                <div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:22px;">&#9200;</div>
               </td>
             </tr>
           </table>
@@ -135,53 +181,23 @@ def _html_email(name: str, today: str, today_hours: float, gaps: List[Dict]) -> 
 </html>"""
 
 
+# ── Public entry point ───────────────────────────────────────────────────────────
+
 def send_timesheet_reminder(to_email: str, name: str, today_str: str,
                              today_hours: float, gaps: List[Dict]) -> bool:
-    """Send reminder email via Gmail SMTP. Returns True on success."""
-    smtp_email    = getattr(settings, "SMTP_EMAIL", "")
-    smtp_password = getattr(settings, "SMTP_PASSWORD", "")
+    subject = f"TimeSync Reminder — Timesheet Incomplete ({date.fromisoformat(today_str).strftime('%d %b %Y')})"
+    html    = _html_email(name, today_str, today_hours, gaps)
 
-    if not smtp_email or not smtp_password:
-        print("[email] SMTP_EMAIL or SMTP_PASSWORD not configured — skipping.")
-        return False
+    # Prefer Resend (HTTP) — works on Render free tier where SMTP ports are blocked
+    if settings.RESEND_API_KEY:
+        ok = _send_via_resend(to_email, subject, html)
+        if ok:
+            print(f"[email] Sent via Resend → {to_email}")
+            return True
+        print(f"[email] Resend failed, falling back to SMTP…")
 
-    try:
-        subject = f"TimeSync Reminder — Timesheet Incomplete ({date.fromisoformat(today_str).strftime('%d %b %Y')})"
-        html    = _html_email(name, today_str, today_hours, gaps)
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = f"TimeSync <{smtp_email}>"
-        msg["To"]      = to_email
-        msg.attach(MIMEText(html, "html"))
-
-        # Try STARTTLS on port 587 first (IPv4 forced to avoid ENETUNREACH on Render)
-        try:
-            with _smtp_ipv4(settings.SMTP_HOST, 587) as s:
-                s.ehlo(settings.SMTP_HOST)
-                s.starttls(context=ssl.create_default_context())
-                s.ehlo(settings.SMTP_HOST)
-                s.login(smtp_email, smtp_password)
-                s.sendmail(smtp_email, to_email, msg.as_string())
-        except smtplib.SMTPAuthenticationError as auth_err:
-            print(f"[email] Auth failed (port 587): {auth_err}. "
-                  "Make sure SMTP_PASSWORD is a 16-char Gmail App Password.")
-            return False
-        except Exception as e587:
-            print(f"[email] Port 587 failed ({e587}), trying SSL port 465…")
-            # Fallback: SSL on port 465 (IPv4 forced)
-            ctx = ssl.create_default_context()
-            with _smtp_ssl_ipv4(settings.SMTP_HOST, 465, ctx) as s:
-                s.login(smtp_email, smtp_password)
-                s.sendmail(smtp_email, to_email, msg.as_string())
-
-        print(f"[email] Reminder sent → {to_email}")
-        return True
-
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[email] Auth failed for {to_email}: {e}. "
-              "Use a Gmail App Password: Google Account → Security → 2-Step Verification → App Passwords")
-        return False
-    except Exception as e:
-        print(f"[email] Failed to send to {to_email}: {type(e).__name__}: {e}")
-        return False
+    # SMTP fallback (works locally)
+    ok = _send_via_smtp(to_email, subject, html)
+    if ok:
+        print(f"[email] Sent via SMTP → {to_email}")
+    return ok

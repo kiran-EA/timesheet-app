@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_EMAIL: str
-    SMTP_PASSWORD: str
+    SMTP_EMAIL: str = ""
+    SMTP_PASSWORD: str = ""
+    RESEND_API_KEY: str = ""   # https://resend.com — preferred on cloud hosts that block SMTP
     
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
