@@ -695,6 +695,13 @@ def toggle_email_notifications(user_id: str, enabled: bool):
     )
 
 
+def toggle_all_email_notifications(enabled: bool):
+    execute_query(
+        "UPDATE users SET email_notifications_enabled = %s WHERE is_active = true",
+        (enabled,), fetch_all=False,
+    )
+
+
 def get_notification_settings() -> Dict[str, Any]:
     row = execute_query("SELECT * FROM notification_settings WHERE id = 1", fetch_one=True)
     return dict(row) if row else {"morning_time": "09:30", "evening_time": "22:00", "enabled": True}

@@ -636,6 +636,18 @@ export default function UserManagementPage() {
     ));
   };
 
+  const handleToggleAllEmail = async (enabled: boolean) => {
+    const res = await fetch(`${API}/users/email-notifications/all`, {
+      method: 'PATCH', headers: authHeaders(token),
+      body: JSON.stringify({ enabled }),
+    });
+    if (res.ok) {
+      setUsers((prev) => prev.map((u) => ({ ...u, email_notifications_enabled: enabled })));
+      setScheduleMsg(enabled ? 'All email notifications enabled.' : 'All email notifications disabled.');
+      setTimeout(() => setScheduleMsg(''), 3000);
+    }
+  };
+
   // ── Notification schedule settings ──
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [morningTime,     setMorningTime]     = useState('09:30');
@@ -785,7 +797,7 @@ export default function UserManagementPage() {
                     style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, colorScheme: t.colorScheme }} />
                   <p className="text-[11px]" style={{ color: t.textSubtle }}>IST</p>
                 </div>
-                <div className="flex items-center gap-2 pb-0.5">
+                <div className="flex items-center gap-2 pb-0.5 flex-wrap">
                   <button onClick={handleSaveSchedule} disabled={scheduleLoading}
                     className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg,#2563eb,#1d4ed8)' }}>
@@ -796,6 +808,19 @@ export default function UserManagementPage() {
                     style={{ border: t.border, color: t.textMuted, background: 'transparent' }}
                     title="Send reminder emails right now to all users who haven't filled 8h today (ignores scheduled times)">
                     Send Now
+                  </button>
+                  <div className="h-5 w-px" style={{ background: t.inputBorder }} />
+                  <button onClick={() => handleToggleAllEmail(true)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                    style={{ background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1px solid rgba(16,185,129,0.25)' }}
+                    title="Enable email notifications for all active users">
+                    All On
+                  </button>
+                  <button onClick={() => handleToggleAllEmail(false)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                    style={{ background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)' }}
+                    title="Disable email notifications for all active users">
+                    All Off
                   </button>
                 </div>
                 {scheduleMsg && (

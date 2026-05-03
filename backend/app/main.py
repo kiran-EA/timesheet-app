@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import auth, jira, timesheet, calendar, approvals, users
+from app.api import auth, jira, timesheet, calendar, approvals, users, notifications
 
 app = FastAPI(
     title="TimeSync API - Phase 1",
@@ -26,6 +26,7 @@ app.include_router(timesheet.router)
 app.include_router(calendar.router)
 app.include_router(approvals.router)
 app.include_router(users.router)
+app.include_router(notifications.router)
 
 @app.on_event("startup")
 async def write_service_account():
@@ -44,6 +45,24 @@ async def write_service_account():
 
 
 @app.on_event("startup")
+async def start_scheduler():
+    try:
+        from app.services.scheduler_service import start
+        start()
+    except Exception as e:
+        print(f"Scheduler startup error: {e}")
+
+
+@app.on_event("shutdown")
+async def stop_scheduler():
+    try:
+        from app.services.scheduler_service import stop
+        stop()
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
 async def run_migrations():
     """Add new columns that may not exist in the live DB yet."""
     from app.db.database import execute_query
@@ -51,6 +70,19 @@ async def run_migrations():
         "ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS epic VARCHAR(200)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_auth_enabled BOOLEAN DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS jira_token VARCHAR",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS jira_token_expires_at DATE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN DEFAULT true",
+        """CREATE TABLE IF NOT EXISTS notification_settings (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            morning_time VARCHAR(5) DEFAULT '09:30',
+            evening_time VARCHAR(5) DEFAULT '22:00',
+            enabled BOOLEAN DEFAULT true,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT single_row CHECK (id = 1)
+        )""",
+        """INSERT INTO notification_settings (id, morning_time, evening_time, enabled)
+           VALUES (1, '09:30', '22:00', true) ON CONFLICT (id) DO NOTHING""",
     ]
     for sql in migrations:
         try:

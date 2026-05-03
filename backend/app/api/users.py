@@ -108,6 +108,29 @@ async def toggle_google_auth(
     return {"user_id": user_id, "google_auth_enabled": body.enabled}
 
 
+@router.patch("/{user_id}/email-notifications")
+async def toggle_email_notifications(
+    user_id: str,
+    body: GoogleAuthToggleBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only: enable/disable email notifications for a user."""
+    require_admin(current_user)
+    queries.toggle_email_notifications(user_id, body.enabled)
+    return {"user_id": user_id, "email_notifications_enabled": body.enabled}
+
+
+@router.patch("/email-notifications/all")
+async def toggle_all_email_notifications(
+    body: GoogleAuthToggleBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Admin only: enable/disable email notifications for ALL active users at once."""
+    require_admin(current_user)
+    queries.toggle_all_email_notifications(body.enabled)
+    return {"email_notifications_enabled": body.enabled}
+
+
 class JiraTokenBody(BaseModel):
     jira_token: str
     jira_token_expires_at: Optional[str] = None  # YYYY-MM-DD or None
