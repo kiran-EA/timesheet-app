@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     RESEND_API_KEY: str = ""     # https://resend.com — preferred on cloud hosts that block SMTP
     RESEND_FROM_EMAIL: str = "TimeSync <onboarding@resend.dev>"  # set to your verified domain after DNS setup
+    GMAIL_SENDER_EMAIL: str = ""  # e.g. kiran@expressanalytics.net — used with service account Gmail API
+    CHAT_WEBHOOK_URL: str = ""   # Google Chat shared space webhook for weekly summary
     
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""

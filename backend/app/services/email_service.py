@@ -2,12 +2,47 @@ import smtplib
 import ssl
 import socket
 import json
+import base64
 import requests as _requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import date, timedelta
 from typing import List, Dict
 from app.core.config import settings
+
+
+# ── Gmail API via service account (no DNS needed, uses existing Google credentials) ─
+
+def _send_via_gmail_api(to_email: str, subject: str, html: str) -> bool:
+    """Send via Gmail REST API using the existing service account + domain-wide delegation.
+    Requires: Gmail API enabled in Google Cloud + delegation set up in Google Admin."""
+    sa_content = settings.GOOGLE_SERVICE_ACCOUNT_CONTENT
+    sender     = settings.GMAIL_SENDER_EMAIL
+    if not sa_content or not sender:
+        return False
+    try:
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+
+        creds = Credentials.from_service_account_info(
+            json.loads(sa_content),
+            scopes=["https://www.googleapis.com/auth/gmail.send"],
+        )
+        delegated = creds.with_subject(sender)
+        service   = build("gmail", "v1", credentials=delegated)
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"TimeSync <{sender}>"
+        msg["To"]      = to_email
+        msg.attach(MIMEText(html, "html"))
+
+        raw  = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        return True
+    except Exception as e:
+        print(f"[email] Gmail API failed: {type(e).__name__}: {e}")
+        return False
 
 
 # ── Resend HTTP API (works on Render free tier; SMTP ports are blocked) ─────────
@@ -188,15 +223,23 @@ def send_timesheet_reminder(to_email: str, name: str, today_str: str,
     subject = f"TimeSync Reminder — Timesheet Incomplete ({date.fromisoformat(today_str).strftime('%d %b %Y')})"
     html    = _html_email(name, today_str, today_hours, gaps)
 
-    # Prefer Resend (HTTP) — works on Render free tier where SMTP ports are blocked
+    # 1. Gmail API via service account (best: uses existing Google credentials, works on Render)
+    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT and settings.GMAIL_SENDER_EMAIL:
+        ok = _send_via_gmail_api(to_email, subject, html)
+        if ok:
+            print(f"[email] Sent via Gmail API → {to_email}")
+            return True
+        print("[email] Gmail API failed, trying Resend…")
+
+    # 2. Resend HTTP API (works on Render free tier where SMTP ports are blocked)
     if settings.RESEND_API_KEY:
         ok = _send_via_resend(to_email, subject, html)
         if ok:
             print(f"[email] Sent via Resend → {to_email}")
             return True
-        print(f"[email] Resend failed, falling back to SMTP…")
+        print("[email] Resend failed, falling back to SMTP…")
 
-    # SMTP fallback (works locally)
+    # 3. SMTP fallback (works locally)
     ok = _send_via_smtp(to_email, subject, html)
     if ok:
         print(f"[email] Sent via SMTP → {to_email}")

@@ -733,6 +733,30 @@ def get_users_for_notification() -> list:
     ) or []
 
 
+def get_weekly_hours_summary(week_start: str, week_end: str) -> list:
+    """Return per-user total hours + working day count for the given week."""
+    from datetime import date, timedelta
+    start = date.fromisoformat(week_start)
+    end   = date.fromisoformat(week_end)
+    working_days = sum(1 for i in range((end - start).days + 1)
+                       if (start + timedelta(days=i)).weekday() < 5)
+
+    rows = execute_query(
+        """SELECT u.full_name, u.user_id,
+                  COALESCE(SUM(te.hours), 0) AS total_hours
+             FROM users u
+             LEFT JOIN timesheet_entries te
+               ON te.user_id = u.user_id
+              AND te.entry_date BETWEEN %s AND %s
+              AND te.status != 'rejected'
+            WHERE u.is_active = true
+            GROUP BY u.user_id, u.full_name
+            ORDER BY u.full_name""",
+        (week_start, week_end), fetch_all=True,
+    ) or []
+    return [dict(r) | {"working_days": working_days} for r in rows]
+
+
 def get_unfilled_weekdays(user_id: str, from_date: str, to_date: str) -> list:
     """Return list of weekday dates (as strings) where total logged hours < 8.
     from_date and to_date are YYYY-MM-DD strings."""

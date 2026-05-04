@@ -48,3 +48,12 @@ async def manual_trigger(current_user: dict = Depends(get_current_user)):
     from app.services.scheduler_service import run_reminder_job
     result = run_reminder_job()
     return result
+
+
+@router.post("/trigger/weekly")
+async def manual_weekly_trigger(current_user: dict = Depends(get_current_user)):
+    """Admin: fire the weekly summary job immediately."""
+    require_admin(current_user)
+    from app.services.scheduler_service import run_weekly_summary_job
+    result = run_weekly_summary_job()
+    return result
