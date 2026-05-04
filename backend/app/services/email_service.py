@@ -16,18 +16,31 @@ from app.core.config import settings
 def _send_via_gmail_api(to_email: str, subject: str, html: str) -> bool:
     """Send via Gmail REST API using the existing service account + domain-wide delegation.
     Requires: Gmail API enabled in Google Cloud + delegation set up in Google Admin."""
-    sa_content = settings.GOOGLE_SERVICE_ACCOUNT_CONTENT
-    sender     = settings.GMAIL_SENDER_EMAIL
-    if not sa_content or not sender:
+    import os as _os
+    sender = settings.GMAIL_SENDER_EMAIL
+    if not sender:
         return False
     try:
         from google.oauth2.service_account import Credentials
         from googleapiclient.discovery import build
 
-        creds = Credentials.from_service_account_info(
-            json.loads(sa_content),
-            scopes=["https://www.googleapis.com/auth/gmail.send"],
-        )
+        sa_content = _os.environ.get("GOOGLE_SERVICE_ACCOUNT_CONTENT", "").strip()
+        if sa_content:
+            creds = Credentials.from_service_account_info(
+                json.loads(sa_content),
+                scopes=["https://www.googleapis.com/auth/gmail.send"],
+            )
+        else:
+            sa_file = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))),
+                settings.GOOGLE_SERVICE_ACCOUNT_FILE,
+            )
+            if not _os.path.exists(sa_file):
+                return False
+            creds = Credentials.from_service_account_file(
+                sa_file,
+                scopes=["https://www.googleapis.com/auth/gmail.send"],
+            )
         delegated = creds.with_subject(sender)
         service   = build("gmail", "v1", credentials=delegated)
 
@@ -224,7 +237,7 @@ def send_timesheet_reminder(to_email: str, name: str, today_str: str,
     html    = _html_email(name, today_str, today_hours, gaps)
 
     # 1. Gmail API via service account (best: uses existing Google credentials, works on Render)
-    if settings.GOOGLE_SERVICE_ACCOUNT_CONTENT and settings.GMAIL_SENDER_EMAIL:
+    if settings.GMAIL_SENDER_EMAIL:
         ok = _send_via_gmail_api(to_email, subject, html)
         if ok:
             print(f"[email] Sent via Gmail API → {to_email}")
