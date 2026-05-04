@@ -57,3 +57,35 @@ async def manual_weekly_trigger(current_user: dict = Depends(get_current_user)):
     from app.services.scheduler_service import run_weekly_summary_job
     result = run_weekly_summary_job()
     return result
+
+
+@router.post("/test/chat")
+async def test_chat_dm(current_user: dict = Depends(get_current_user)):
+    """Admin: test Chat DM to own account and return detailed error info."""
+    require_admin(current_user)
+    import traceback
+    from app.services.chat_service import _get_chat_service, _dm_space_name
+
+    result = {"service_built": False, "space_name": None, "message_sent": False, "error": None}
+    try:
+        svc = _get_chat_service()
+        if not svc:
+            result["error"] = "Service account not found — check GOOGLE_SERVICE_ACCOUNT_CONTENT or service-account.json"
+            return result
+        result["service_built"] = True
+
+        space = svc.spaces().setup(body={
+            "space": {"spaceType": "DIRECT_MESSAGE"},
+            "memberships": [{"member": {"name": f"users/{current_user['email']}", "type": "HUMAN"}}],
+        }).execute()
+        result["space_name"] = space.get("name")
+
+        svc.spaces().messages().create(
+            parent=space["name"],
+            body={"text": "✅ TimeSync Chat test message — it works!"},
+        ).execute()
+        result["message_sent"] = True
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+        result["traceback"] = traceback.format_exc()
+    return result
