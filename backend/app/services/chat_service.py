@@ -40,7 +40,31 @@ def _get_chat_service():
 
 
 def _dm_space_name(service, user_email: str) -> Optional[str]:
-    """Find or create a DM space with user_email. Returns space name like 'spaces/...'."""
+    """Find an existing DM space with user_email by listing spaces the bot is in."""
+    try:
+        # List all DM spaces the bot is a member of
+        resp = service.spaces().list(pageSize=100).execute()
+        spaces = resp.get("spaces", [])
+        for space in spaces:
+            # Check members of this DM space
+            try:
+                members = service.spaces().members().list(parent=space["name"]).execute()
+                for m in members.get("memberships", []):
+                    display = m.get("member", {}).get("displayName", "")
+                    name    = m.get("member", {}).get("name", "")
+                    # Match by first name or full name (handle dots: harish.shegokar → harish shegokar)
+                    email_user  = user_email.split("@")[0].lower()
+                    first_name  = email_user.split(".")[0]
+                    name_spaced = email_user.replace(".", " ")
+                    dl = display.lower()
+                    if (first_name in dl or name_spaced in dl or email_user in dl):
+                        return space["name"]
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"[chat] Could not list DM spaces: {e}")
+
+    # Fall back to setup
     try:
         space = service.spaces().setup(body={
             "space": {"spaceType": "DIRECT_MESSAGE"},
