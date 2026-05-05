@@ -551,11 +551,12 @@ interface GeneralStat {
 }
 
 // ── Epic row (expandable) ──────────────────────────────────────────────────────
-function EpicRow({ epic, isOpen, onToggle, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate }: {
+function EpicRow({ epic, isOpen, onToggle, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate, sprintOnly }: {
   epic: EpicStat; isOpen: boolean; onToggle: () => void;
   openMembers: Set<string>; onToggleMember: (id: string) => void;
   openTasks: Set<string>; onToggleTask: (id: string) => void;
   token: string; startDate: string; endDate: string;
+  sprintOnly?: boolean;
 }) {
   const logged  = Number(epic.total_logged_hours || 0);
   const est     = epic.total_est_hours != null ? Number(epic.total_est_hours) : null;
@@ -661,6 +662,7 @@ function EpicRow({ epic, isOpen, onToggle, openMembers, onToggleMember, openTask
                     token={token}
                     startDate={startDate}
                     endDate={endDate}
+                    sprintOnly={sprintOnly}
                   />
                 ))
               )}
@@ -811,11 +813,13 @@ function TaskRow({ task, memberId, isOpen, onToggle, token, startDate, endDate }
 }
 
 // ── Member row inside expanded epic (now also expandable) ───────────────────
-function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, startDate, endDate }: {
+function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, startDate, endDate, sprintOnly }: {
   member: EpicMember; isOpen: boolean; onToggle: () => void;
   openTasks: Set<string>; onToggleTask: (id: string) => void;
   token: string; startDate: string; endDate: string;
+  sprintOnly?: boolean;
 }) {
+  const visibleTasks = sprintOnly ? (member.tasks ?? []).filter(t => t.is_active_sprint) : (member.tasks ?? []);
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
       {/* member header (clickable) */}
@@ -839,10 +843,10 @@ function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, s
         </div>
         <RoleBadge role={member.role} />
         <span className="ml-2 text-xs" style={{ color: t.textMuted }}>
-          <strong style={{ color: t.text }}>{member.tasks?.length ?? 0}</strong> tasks
+          <strong style={{ color: t.text }}>{visibleTasks.length}</strong> tasks
         </span>
         <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#059669' }}>
-          <strong>{member.tasks?.filter(t => t.is_active_sprint).length ?? 0}</strong> in sprint
+          <strong>{(member.tasks ?? []).filter(t => t.is_active_sprint).length}</strong> in sprint
         </span>
         <span className="ml-2 text-sm font-bold font-mono px-3 py-1 rounded-lg"
           style={{ background: member.total_logged > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.1)', color: member.total_logged > 0 ? '#059669' : t.textMuted }}>
@@ -853,8 +857,8 @@ function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, s
       {/* expanded view: list of expandable tasks */}
       {isOpen && (
         <div className="p-4 space-y-2" style={{ background: 'rgba(0,0,0,0.1)' }}>
-          {member.tasks.length > 0 ? (
-            member.tasks.map((task) => {
+          {visibleTasks.length > 0 ? (
+            visibleTasks.map((task) => {
               const taskId = `${member.user_id}::${task.key}`;
               return (
                 <TaskRow
@@ -870,7 +874,7 @@ function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, s
               );
             })
           ) : (
-            <p className="text-xs text-center py-2" style={{ color: t.textSubtle }}>No tasks for this member in this epic.</p>
+            <p className="text-xs text-center py-2" style={{ color: t.textSubtle }}>No sprint tasks for this member.</p>
           )}
         </div>
       )}
@@ -880,7 +884,7 @@ function MemberRow({ member, isOpen, onToggle, openTasks, onToggleTask, token, s
 
 // ── Project View — Space section ──────────────────────────────────────────────
 function SpaceSection({
-  space, openEpics, onToggleEpic, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate
+  space, openEpics, onToggleEpic, openMembers, onToggleMember, openTasks, onToggleTask, token, startDate, endDate, sprintOnly
 }: {
   space: ProjectSpace;
   openEpics: Set<string>;
@@ -892,6 +896,7 @@ function SpaceSection({
   token: string;
   startDate: string;
   endDate: string;
+  sprintOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -966,6 +971,7 @@ function SpaceSection({
                   token={token}
                   startDate={startDate}
                   endDate={endDate}
+                  sprintOnly={sprintOnly}
                 />
               );
             })}
@@ -1132,6 +1138,7 @@ function ProjectView({ token, startDate, endDate, sprintOnly, refreshKey, onFetc
               token={token}
               startDate={startDate}
               endDate={endDate}
+              sprintOnly={sprintOnly}
             />
           ))}
           {general && <GeneralSection

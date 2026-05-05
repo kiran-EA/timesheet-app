@@ -16,7 +16,6 @@ interface JiraTask { key: string; title: string; }
 interface EventRow extends CalEvent {
   hours: string; description: string; task_key: string; deleted: boolean;
 }
-interface AdminUser { user_id: string; full_name: string; email: string; }
 
 const DEFAULT_GENERAL: JiraTask[] = [
   { key: 'HSB-7',  title: 'Team Meetings' },
@@ -36,11 +35,8 @@ function aH(token: string) {
 }
 
 export default function CalendarPage() {
-  const token    = useAuthStore((s) => s.token) ?? '';
-  const authUser = useAuthStore((s) => s.user);
-  const router   = useRouter();
-  const isAdmin  = authUser?.role === 'admin';
-  const myId     = authUser?.id ?? '';
+  const token  = useAuthStore((s) => s.token) ?? '';
+  const router = useRouter();
   const today    = new Date().toISOString().split('T')[0];
 
   // Calendar allows fetching today + 3 future working days
@@ -62,22 +58,6 @@ export default function CalendarPage() {
   const [fetched,      setFetched]      = useState(false);
   const [jiraTasks,    setJiraTasks]    = useState<JiraTask[]>([]);
   const [generalTasks, setGeneralTasks] = useState<JiraTask[]>(DEFAULT_GENERAL);
-  const [adminUsers,   setAdminUsers]   = useState<AdminUser[]>([]);
-  const [targetId,     setTargetId]     = useState('');
-
-  const effectiveId = isAdmin ? (targetId || myId) : myId;
-
-  useEffect(() => {
-    if (!isAdmin || !token) return;
-    fetch(`${API}/users/all`, { headers: aH(token) })
-      .then(r => r.ok ? r.json() : { users: [] })
-      .then(d => {
-        setAdminUsers(d.users ?? []);
-        if (!targetId) setTargetId(myId);
-      })
-      .catch(() => {});
-  }, [isAdmin, token, myId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     if (!token) return;
     fetch(`${API}/jira/tasks`, { headers: aH(token) })
@@ -111,7 +91,6 @@ export default function CalendarPage() {
     const toLog = rows.filter((r) => !r.deleted && !r.already_logged && parseFloat(r.hours) > 0);
     if (!toLog.length) { setError('Nothing to submit.'); return; }
     setSaving(true); setError('');
-    const loggingForOther = isAdmin && effectiveId !== myId;
     for (const row of toLog) {
       const all = [...generalTasks, ...jiraTasks];
       const taskTitle = all.find((tk) => tk.key === row.task_key)?.title ?? row.task_key;
@@ -121,14 +100,13 @@ export default function CalendarPage() {
           body: JSON.stringify({
             task_id: row.task_key, task_title: taskTitle,
             entry_date: date, work_description: row.description, hours: parseFloat(row.hours),
-            ...(loggingForOther ? { target_user_id: effectiveId } : {}),
           }),
         });
       } catch (ex) { console.error('save error', ex); }
     }
     setSaving(false);
     router.push(`/timesheet?date=${date}`);
-  }, [rows, date, token, generalTasks, jiraTasks, router, isAdmin, effectiveId, myId]);
+  }, [rows, date, token, generalTasks, jiraTasks, router]);
 
   const visible = rows.filter((r) => !r.deleted);
   const pendingCount = visible.filter((r) => !r.already_logged).length;
@@ -148,22 +126,9 @@ export default function CalendarPage() {
         <div>
           <h2 className="text-xl font-semibold" style={{ color: t.text }}>Calendar Import</h2>
           <p className="text-sm" style={{ color: t.textMuted }}>
-            {isAdmin && effectiveId !== myId
-              ? `Logging entries for ${adminUsers.find(u => u.user_id === effectiveId)?.full_name ?? 'selected user'}`
-              : 'Fetch Google Calendar events and log them as timesheet entries'}
+            Fetch Google Calendar events and log them as timesheet entries
           </p>
         </div>
-        {isAdmin && adminUsers.length > 0 && (
-          <select value={effectiveId} onChange={e => { setTargetId(e.target.value); setFetched(false); setRows([]); }}
-            className="px-3 py-2 rounded-lg text-sm focus:outline-none"
-            style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, minWidth: 220 }}>
-            {adminUsers.map(u => (
-              <option key={u.user_id} value={u.user_id}>
-                {u.full_name} ({u.email}){u.user_id === myId ? ' — Me' : ''}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">

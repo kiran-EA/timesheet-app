@@ -49,6 +49,7 @@ export default function ApprovalsPage() {
   const [teamSize,    setTeamSize]    = useState(0);
   const [loading,     setLoading]     = useState(true);
   const [dateFilter,  setDateFilter]  = useState('');
+  const [myOnly,      setMyOnly]      = useState(false);
   const [successMsg,  setSuccessMsg]  = useState('');
   const [warnMsg,     setWarnMsg]     = useState('');
   const [errorMsg,    setErrorMsg]    = useState('');
@@ -100,11 +101,31 @@ export default function ApprovalsPage() {
   };
 
   const handleApproveAll = async () => {
+    setConfirmApproveAll(false);
+
+    // When "My Team" filter is active, approve only the displayed (filtered) entries
+    if (myOnly) {
+      const toApprove = entries.filter((e) => e.manager_name === (user?.name ?? ''));
+      const results = await Promise.all(
+        toApprove.map((e) =>
+          fetch(`${API}/approvals/approve/${e.id}`, { method: 'POST', headers: aH(token) })
+            .then(async (r) => ({ id: e.id, ok: r.ok, data: await r.json().catch(() => ({})) }))
+        )
+      );
+      const approvedIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      const blocked = results.filter((r) => !r.ok);
+      if (approvedIds.size > 0) {
+        setEntries((prev) => prev.filter((e) => !approvedIds.has(e.id)));
+        flash(`${approvedIds.size} entr${approvedIds.size === 1 ? 'y' : 'ies'} approved and synced to JIRA.`);
+      }
+      if (blocked.length > 0) warn(blocked[0].data?.detail || 'Some entries could not be approved.');
+      return;
+    }
+
     const url = dateFilter
       ? `${API}/approvals/approve-all?entry_date=${dateFilter}`
       : `${API}/approvals/approve-all`;
     const res = await fetch(url, { method: 'POST', headers: aH(token) });
-    setConfirmApproveAll(false);
     if (!res.ok) { error('Approve All failed. Please try again.'); return; }
     const data = await res.json();
     // Remove only the approved entries from the list
@@ -153,15 +174,21 @@ export default function ApprovalsPage() {
     flash('Entry rejected.');
   };
 
+  // Filter to admin's direct reports when myOnly is on
+  const isAdmin        = user?.role === 'admin';
+  const visibleEntries = isAdmin && myOnly
+    ? entries.filter((e) => e.manager_name === (user?.name ?? ''))
+    : entries;
+
   // Group entries by user
-  const grouped = entries.reduce<Record<string, { info: PendingEntry; items: PendingEntry[] }>>((acc, e) => {
+  const grouped = visibleEntries.reduce<Record<string, { info: PendingEntry; items: PendingEntry[] }>>((acc, e) => {
     if (!acc[e.user_id]) acc[e.user_id] = { info: e, items: [] };
     acc[e.user_id].items.push(e);
     return acc;
   }, {});
 
-  const pendingCount     = entries.length;
-  const resubmittedCount = entries.filter((e) => e.status === 'resubmitted').length;
+  const pendingCount     = visibleEntries.length;
+  const resubmittedCount = visibleEntries.filter((e) => e.status === 'resubmitted').length;
   const peopleCount      = teamSize;   // total subordinates, not just those with pending entries
 
   return (
@@ -175,6 +202,27 @@ export default function ApprovalsPage() {
           <p className="text-sm" style={{ color: t.textMuted }}>Review and approve timesheet entries from your team</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
+          {isAdmin && (
+            <div className="flex rounded-lg overflow-hidden flex-shrink-0" style={{ border: t.border }}>
+              <button onClick={() => setMyOnly(false)}
+                className="px-3 py-2 text-xs font-semibold transition-colors"
+                style={{
+                  background: !myOnly ? 'linear-gradient(135deg,#2563eb,#1d4ed8)' : t.inputBg,
+                  color: !myOnly ? '#fff' : t.textMuted,
+                }}>
+                All
+              </button>
+              <button onClick={() => setMyOnly(true)}
+                className="px-3 py-2 text-xs font-semibold transition-colors"
+                style={{
+                  background: myOnly ? 'linear-gradient(135deg,#2563eb,#1d4ed8)' : t.inputBg,
+                  color: myOnly ? '#fff' : t.textMuted,
+                  borderLeft: t.border,
+                }}>
+                My Team
+              </button>
+            </div>
+          )}
           <input type="date" value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-4 py-2 rounded-lg text-sm focus:outline-none"
@@ -275,7 +323,7 @@ export default function ApprovalsPage() {
             </div>
             <h3 className="text-[18px] font-semibold tracking-tight mb-1" style={{ color: t.text }}>All caught up</h3>
             <p className="text-[13.5px] leading-relaxed max-w-[36ch] mx-auto" style={{ color: t.textMuted }}>
-              No pending entries{dateFilter ? ' for this date' : ''}. Approvals will appear here as they come in.
+              No pending entries{myOnly ? ' from your direct reports' : ''}{dateFilter ? ' for this date' : ''}. Approvals will appear here as they come in.
             </p>
           </div>
         ) : (

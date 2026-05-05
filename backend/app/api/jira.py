@@ -272,9 +272,15 @@ async def get_epic_dashboard(
     else:
         db_rows = queries.get_all_epic_dashboard_entries()
 
+    # Fallback: map task_id → epic_key from Jira task data so that entries
+    # logged without an epic column still get attributed to the right epic.
+    task_to_epic = {t["key"]: (t.get("epic") or "") for t in jira_tasks}
+
     db_by_epic: dict = defaultdict(lambda: defaultdict(dict))
     for row in db_rows:
         epic = row.get("epic") or ""
+        if not epic:
+            epic = task_to_epic.get(row["task_id"], "")
         db_by_epic[epic][row["user_id"]][row["task_id"]] = float(row["total_hours"])
 
     # Ensure epics that only exist in DB logs (e.g. from closed epics not in Jira epics_list) are included
@@ -455,7 +461,8 @@ async def get_epic_dashboard(
     # "No Epic" per space: DB entries with no epic tag (excluding general tasks)
     no_epic_db: dict = defaultdict(lambda: defaultdict(dict))  # space → uid → task_id → hours
     for row in db_rows:
-        if row.get("epic") or row["task_id"] in general_key_set:
+        epic = row.get("epic") or task_to_epic.get(row["task_id"], "")
+        if epic or row["task_id"] in general_key_set:
             continue
         sp = _space_of(row["task_id"])
         no_epic_db[sp][row["user_id"]][row["task_id"]] = float(row["total_hours"])
@@ -501,7 +508,8 @@ async def get_epic_dashboard(
                 "members": ne_members,
             }
 
-        all_in_space = epics + ([no_epic_entry] if no_epic_entry else [])
+        # In sprint-only mode, no-epic tasks are never in a sprint — omit them
+        all_in_space = epics + ([] if sprint_only else ([no_epic_entry] if no_epic_entry else []))
         all_uids = {m["user_id"] for e in all_in_space for m in e["members"]}
 
         result_spaces.append({
