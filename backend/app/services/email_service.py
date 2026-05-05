@@ -159,7 +159,7 @@ def _html_email(name: str, today: str, today_hours: float, gaps: List[Dict]) -> 
     today_color  = "#dc2626" if today_hours == 0 else ("#d97706" if today_hours < 8 else "#059669")
     today_status = f"{today_hours}h logged" if today_hours > 0 else "0h — not filled"
     today_label  = date.fromisoformat(today).strftime("%a, %d %b %Y")
-    app_url      = "https://timesheet-app-lac.vercel.app"
+    app_url      = "https://timesync.expressanalytics.com"
 
     gap_section = ""
     if gaps:

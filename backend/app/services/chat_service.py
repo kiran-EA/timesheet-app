@@ -100,7 +100,7 @@ def _dm_text(name: str, today: str, today_hours: float, gaps: List[Dict]) -> str
         if len(gaps) > 5:
             gap_lines += f"\n_…and {len(gaps) - 5} more_"
 
-    app_url = "https://timesheet-app-lac.vercel.app/timesheet"
+    app_url = "https://timesync.expressanalytics.com/timesheet"
     return (
         f"*Hi {name}!* 👋\n\n"
         f"*TimeSync Reminder* — please log at least *8 hours* for today.\n\n"
