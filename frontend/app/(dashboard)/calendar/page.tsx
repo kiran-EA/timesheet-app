@@ -54,6 +54,7 @@ export default function CalendarPage() {
   const [rows,         setRows]         = useState<EventRow[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [saving,       setSaving]       = useState(false);
+  const [saveProgress, setSaveProgress] = useState<{ current: number; total: number } | null>(null);
   const [error,        setError]        = useState('');
   const [fetched,      setFetched]      = useState(false);
   const [jiraTasks,    setJiraTasks]    = useState<JiraTask[]>([]);
@@ -91,7 +92,10 @@ export default function CalendarPage() {
     const toLog = rows.filter((r) => !r.deleted && !r.already_logged && parseFloat(r.hours) > 0);
     if (!toLog.length) { setError('Nothing to submit.'); return; }
     setSaving(true); setError('');
-    for (const row of toLog) {
+    setSaveProgress({ current: 0, total: toLog.length });
+    for (let i = 0; i < toLog.length; i++) {
+      const row = toLog[i];
+      setSaveProgress({ current: i + 1, total: toLog.length });
       const all = [...generalTasks, ...jiraTasks];
       const taskTitle = all.find((tk) => tk.key === row.task_key)?.title ?? row.task_key;
       try {
@@ -105,6 +109,7 @@ export default function CalendarPage() {
       } catch (ex) { console.error('save error', ex); }
     }
     setSaving(false);
+    setSaveProgress(null);
     router.push(`/timesheet?date=${date}`);
   }, [rows, date, token, generalTasks, jiraTasks, router]);
 
@@ -271,6 +276,38 @@ export default function CalendarPage() {
         )}
       </div>
       </div>
+
+      {/* Save progress overlay */}
+      {saveProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}>
+          <div className="flex flex-col items-center gap-5 rounded-2xl px-10 py-8 shadow-2xl"
+            style={{ background: t.cardBg, border: t.border, minWidth: 260 }}>
+            {/* Spinner */}
+            <svg className="w-10 h-10 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"
+                style={{ color: 'rgba(37,99,235,0.15)' }} />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="#2563eb" strokeWidth="2.5"
+                strokeLinecap="round" />
+            </svg>
+            {/* Text */}
+            <div className="text-center">
+              <p className="text-sm font-semibold" style={{ color: t.text }}>
+                Saving calendar event {saveProgress.current} of {saveProgress.total}…
+              </p>
+              <p className="text-xs mt-1" style={{ color: t.textMuted }}>Please wait</p>
+            </div>
+            {/* Progress bar */}
+            <div className="w-full rounded-full overflow-hidden h-1.5" style={{ background: t.inputBorder }}>
+              <div className="h-full rounded-full transition-all duration-300"
+                style={{
+                  width: `${(saveProgress.current / saveProgress.total) * 100}%`,
+                  background: 'linear-gradient(90deg,#2563eb,#1d4ed8)',
+                }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
