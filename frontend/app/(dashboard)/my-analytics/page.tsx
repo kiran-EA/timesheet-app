@@ -129,8 +129,9 @@ function CalendarGrid({ year, month, dayMap, today }: {
           const isFuture  = dateStr > today;
           const isWeekend = i % 7 >= 5;
           let bg = 'rgba(100,116,139,0.06)', textColor = t.textMuted, hoursColor = t.textSubtle, borderColor = 'transparent';
+          let tagBg = 'rgba(59,130,246,0.15)', tagColor = '#93c5fd';
           if (!isFuture && !isWeekend && hours > 0) {
-            if (hours >= 8) { bg = 'rgba(16,185,129,0.12)'; textColor = '#e2e8f0'; hoursColor = '#10b981'; borderColor = 'rgba(16,185,129,0.3)'; }
+            if (hours >= 8) { bg = 'rgba(16,185,129,0.12)'; textColor = '#1e293b'; hoursColor = '#1e293b'; borderColor = 'rgba(16,185,129,0.3)'; tagBg = 'rgba(255,255,255,0.55)'; tagColor = '#1e293b'; }
             else            { bg = 'rgba(239,68,68,0.10)';  textColor = '#e2e8f0'; hoursColor = '#ef4444'; borderColor = 'rgba(239,68,68,0.3)'; }
           } else if (!isFuture && !isWeekend) {
             bg = 'rgba(239,68,68,0.06)'; borderColor = 'rgba(239,68,68,0.15)';
@@ -151,8 +152,8 @@ function CalendarGrid({ year, month, dayMap, today }: {
               {data && Object.keys(data.spaces).length > 0 && (
                 <div className="flex flex-wrap gap-0.5 mt-1">
                   {Object.entries(data.spaces).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([sk])=>(
-                    <span key={sk} className="text-[9px] px-1 rounded"
-                      style={{ background: 'rgba(59,130,246,0.15)', color: '#93c5fd' }}>{sk}</span>
+                    <span key={sk} className="text-[9px] font-bold px-1 rounded"
+                      style={{ background: tagBg, color: tagColor }}>{sk}</span>
                   ))}
                 </div>
               )}
