@@ -84,10 +84,10 @@ function UserBar({ member, pct, color }: { member: Member; pct: number; color: s
       {/* Hover overlay */}
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-150"
         style={{ background: 'rgba(255,255,255,0.18)', opacity: pos ? 1 : 0 }} />
-      {/* Name label */}
-      {pct > 8 && (
-        <span className="relative text-white text-xs font-semibold truncate px-2 pointer-events-none select-none"
-          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+      {/* Name label — only render when segment is wide enough to show the full first name */}
+      {pct > 12 && (
+        <span className="relative text-white text-xs font-semibold px-2 pointer-events-none select-none"
+          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)', overflow: 'hidden', whiteSpace: 'nowrap' }}>
           {first}
         </span>
       )}
