@@ -3,7 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 from datetime import timedelta
 import pytz
 
-REFERENCE_DATE = "2026-04-15"
+APP_START_DATE = "2026-05-08"   # no reminders for dates before this
 IST_TZ         = "Asia/Kolkata"
 _IST           = pytz.timezone(IST_TZ)
 
@@ -53,11 +53,13 @@ def run_reminder_job() -> dict:
         )
         today_hours = float(dict(row)["h"]) if row else 0.0
 
-        if today_hours >= 8:
+        # Gaps = any unfilled weekday from app start date up to (and including) yesterday
+        gaps = get_unfilled_weekdays(u["user_id"], APP_START_DATE, yesterday)
+
+        # Skip only if today is fully logged AND there are no historical gaps
+        if today_hours >= 8 and not gaps:
             skipped += 1
             continue
-
-        gaps = get_unfilled_weekdays(u["user_id"], REFERENCE_DATE, yesterday)
 
         email_ok = send_timesheet_reminder(
             to_email    = u["email"],
