@@ -527,5 +527,41 @@ class JiraService:
             print(f"post_worklog error: {e}")
             return False
 
+    def post_worklog_as_service_account(
+        self,
+        issue_key: str,
+        entry_date: str,
+        hours: float,
+        description: str,
+    ) -> bool:
+        """POST a worklog using the service account (has access to all projects).
+        Used for assisted entries so the logger's personal token is not required."""
+        try:
+            started = f"{entry_date}T09:00:00.000+0000"
+            body = {
+                "timeSpentSeconds": int(hours * 3600),
+                "started": started,
+                "comment": {
+                    "type": "doc",
+                    "version": 1,
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": description or issue_key}]}],
+                },
+            }
+            r = requests.post(
+                f"{self.base_url}/issue/{issue_key}/worklog",
+                auth=self.auth,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=body,
+                timeout=15,
+            )
+            if r.ok:
+                print(f"JIRA worklog posted (service account): {issue_key} {hours}h")
+                return True
+            print(f"JIRA worklog failed (service account): {issue_key} {r.status_code} {r.text[:200]}")
+            return False
+        except Exception as e:
+            print(f"post_worklog_as_service_account error: {e}")
+            return False
+
 
 jira_service = JiraService()
