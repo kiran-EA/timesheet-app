@@ -90,14 +90,16 @@ function LastUpdated({ ts }: { ts: number | null }) {
 }
 
 // ── Task table ────────────────────────────────────────────────────────────────
-function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigneeLabel, loggedKeys }: {
-  tasks: JiraTask[]; onLog: (task: JiraTask) => void; simple?: boolean; showAssignee?: boolean; assigneeLabel?: string; loggedKeys?: Set<string>;
+function TaskTable({ tasks, onLog, simple = false, assistedMode = false, showAssignee = false, assigneeLabel, loggedKeys }: {
+  tasks: JiraTask[]; onLog: (task: JiraTask) => void; simple?: boolean; assistedMode?: boolean; showAssignee?: boolean; assigneeLabel?: string; loggedKeys?: Set<string>;
 }) {
   if (tasks.length === 0)
     return <div className="text-center py-10" style={{ color: t.textSubtle }}>No tasks in this section.</div>;
 
   const headers = simple
     ? ['Task No', 'Purpose', 'Status', '']
+    : assistedMode
+    ? ['Task No', 'Description', 'Epic', 'Status', '']
     : [
         'Task No', 'Description', 'Epic',
         ...(showAssignee ? ['Assignee'] : []),
@@ -107,7 +109,7 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: t.border }}>
       <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse" style={{ minWidth: simple ? 480 : 860 }}>
+      <table className="w-full text-sm border-collapse" style={{ minWidth: simple ? 480 : assistedMode ? 620 : 860 }}>
         <thead style={{ background: t.tableHead }}>
           <tr>
             {headers.map((h) => (
@@ -125,8 +127,8 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
               ? Math.min(100, Math.round((task.logged_hours / task.est_hours) * 100)) : 0;
             const pctColor = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f59e0b' : '#10b981';
 
-            // Disable Log when logged >= est * 1.2 (no allocation left at all)
-            const maxAllowed   = task.est_hours != null ? task.est_hours * 1.2 : null;
+            // Disable Log when logged >= est * 1.2 (no allocation left at all) — never block in assistedMode
+            const maxAllowed   = !assistedMode && task.est_hours != null ? task.est_hours * 1.2 : null;
             const logExhausted = maxAllowed != null && task.logged_hours >= maxAllowed;
 
             const alreadyLogged = loggedKeys?.has(task.key) ?? false;
@@ -163,12 +165,12 @@ function TaskTable({ tasks, onLog, simple = false, showAssignee = false, assigne
                     )}
                   </td>
                 )}
-                {!simple && showAssignee && (
+                {!simple && !assistedMode && showAssignee && (
                   <td className="px-4 py-4 text-xs font-medium" style={{ color: t.textBody }}>
                     {task.assignee ?? assigneeLabel ?? <span style={{ color: t.textSubtle }}>—</span>}
                   </td>
                 )}
-                {!simple && (
+                {!simple && !assistedMode && (
                   <>
                     <td className="px-4 py-4 text-center font-bold" style={{ color: '#8b5cf6' }}>
                       {task.story_points ?? '—'}
@@ -847,7 +849,7 @@ export default function TimesheetPage() {
                       </h4>
                       {assistSprint.length === 0
                         ? <p className="text-sm py-4 text-center" style={{ color: t.textSubtle }}>No active sprint tasks.</p>
-                        : <TaskTable tasks={assistSprint} onLog={(task) => openModal(task, true)} loggedKeys={new Set()} showAssignee={false} assigneeLabel={selectedUser?.full_name} />
+                        : <TaskTable tasks={assistSprint} onLog={(task) => openModal(task, true)} loggedKeys={new Set()} assistedMode />
                       }
                     </div>
                     {/* Available Tasks section */}
@@ -861,7 +863,7 @@ export default function TimesheetPage() {
                       </h4>
                       {assistAvailable.length === 0
                         ? <p className="text-sm py-4 text-center" style={{ color: t.textSubtle }}>No available tasks.</p>
-                        : <TaskTable tasks={assistAvailable} onLog={(task) => openModal(task, true)} loggedKeys={new Set()} showAssignee={false} assigneeLabel={selectedUser?.full_name} />
+                        : <TaskTable tasks={assistAvailable} onLog={(task) => openModal(task, true)} loggedKeys={new Set()} assistedMode />
                       }
                     </div>
                   </div>
@@ -935,8 +937,8 @@ export default function TimesheetPage() {
               </button>
             </div>
 
-            {/* Hour allocation indicator */}
-            {estH != null && (
+            {/* Hour allocation indicator — hidden for assisted entries (no hours cap) */}
+            {!isAssisted && estH != null && (
               <div className="px-3 py-2 rounded-lg text-xs flex items-center gap-3"
                 style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)' }}>
                 <span style={{ color: t.textMuted }}>
