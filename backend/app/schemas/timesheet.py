@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
-from datetime import date
+from datetime import date, time as _time
 
 
 class TimesheetEntryCreate(BaseModel):
@@ -33,6 +33,13 @@ class TimesheetEntryResponse(BaseModel):
     is_assisted: bool = False
     assisted_user_id: Optional[str] = None
     start_time: Optional[str] = None
+
+    @field_validator('start_time', mode='before')
+    @classmethod
+    def coerce_start_time(cls, v):
+        if isinstance(v, _time):
+            return v.strftime('%H:%M:%S')
+        return v
 
 
 class JiraTask(BaseModel):
