@@ -86,7 +86,6 @@ async def google_login(login_hint: str = ""):
         "redirect_uri":  settings.GOOGLE_LOGIN_REDIRECT_URI,
         "response_type": "code",
         "scope":         "openid email profile",
-        "access_type":   "offline",
         "hd":            "expressanalytics.net",
     }
     if login_hint:
